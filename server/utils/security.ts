@@ -1,0 +1,122 @@
+import crypto from 'crypto';
+import { TodoItem, Priority, Category } from '../types';
+
+export function sanitizeString(input: unknown, maxLength: number = 500): string {
+  if (typeof input !== 'string') {
+    return '';
+  }
+
+  let cleaned = input.slice(0, maxLength);
+  cleaned = cleaned.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  cleaned = cleaned.replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
+  cleaned = cleaned.replace(/on\w+\s*=\s*[^>\s]+/gi, '');
+  cleaned = cleaned.replace(/javascript\s*:/gi, '');
+  cleaned = cleaned.replace(/vbscript\s*:/gi, '');
+  cleaned = cleaned.replace(/data\s*:\s*text\/html/gi, '');
+  cleaned = cleaned.replace(/<\/?[^>]+(>|$)/g, '');
+
+  return cleaned.trim();
+}
+
+export function computeChecksum(obj: unknown): string {
+  const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  return crypto.createHash('sha256').update(str).digest('hex');
+}
+
+const VALID_PRIORITIES: Priority[] = ['low', 'medium', 'high', 'urgent'];
+const VALID_CATEGORIES: Category[] = ['work', 'personal', 'finance', 'health', 'learning', 'errands'];
+
+export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  // Block prototype pollution
+  if ('__proto__' in obj || 'constructor' in obj || 'prototype' in obj) {
+    // Drop malicious attempts
+  }
+
+  const rawTitle = typeof obj.title === 'string' ? obj.title : '';
+  const safeTitle = sanitizeString(rawTitle, 200);
+  if (!safeTitle) {
+    return null;
+  }
+
+  const rawId = typeof obj.id === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(obj.id)
+    ? obj.id
+    : `tp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  const rawDesc = typeof obj.description === 'string' ? obj.description : undefined;
+  const safeDesc = rawDesc ? sanitizeString(rawDesc, 1000) : undefined;
+
+  const safeCompleted = Boolean(obj.completed);
+  const now = new Date().toISOString();
+  const safeCreatedAt = typeof obj.createdAt === 'string' && !isNaN(Date.parse(obj.createdAt)) ? obj.createdAt : now;
+  const safeUpdatedAt = typeof obj.updatedAt === 'string' && !isNaN(Date.parse(obj.updatedAt)) ? obj.updatedAt : now;
+  const safeCompletedAt = obj.completedAt && typeof obj.completedAt === 'string' && !isNaN(Date.parse(obj.completedAt))
+    ? obj.completedAt
+    : safeCompleted ? now : undefined;
+
+  let safeDueDate: string | undefined = undefined;
+  if (typeof obj.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(obj.dueDate)) {
+    safeDueDate = obj.dueDate;
+  }
+
+  const rawPriority = obj.priority as Priority;
+  const safePriority: Priority = VALID_PRIORITIES.includes(rawPriority) ? rawPriority : 'medium';
+
+  const rawCategory = obj.category as Category;
+  const safeCategory: Category = VALID_CATEGORIES.includes(rawCategory) ? rawCategory : 'work';
+
+  const safeSubtasks: TodoItem['subtasks'] = [];
+  if (Array.isArray(obj.subtasks)) {
+    for (const sub of obj.subtasks.slice(0, 50)) {
+      if (sub && typeof sub === 'object') {
+        const subRecord = sub as Record<string, unknown>;
+        const subTitle = sanitizeString(typeof subRecord.title === 'string' ? subRecord.title : '', 150);
+        if (subTitle) {
+          safeSubtasks.push({
+            id: typeof subRecord.id === 'string' && /^[a-zA-Z0-9_-]+$/.test(subRecord.id) ? subRecord.id : `st-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            title: subTitle,
+            completed: Boolean(subRecord.completed),
+          });
+        }
+      }
+    }
+  }
+
+  let safeMinutes: number | undefined = undefined;
+  if (typeof obj.estimatedMinutes === 'number' && Number.isFinite(obj.estimatedMinutes)) {
+    safeMinutes = Math.max(5, Math.min(480, Math.round(obj.estimatedMinutes)));
+  }
+
+  const safeTags: string[] = [];
+  if (Array.isArray(obj.tags)) {
+    for (const t of obj.tags.slice(0, 10)) {
+      if (typeof t === 'string') {
+        const cleaned = sanitizeString(t, 30).toLowerCase();
+        if (cleaned && !safeTags.includes(cleaned)) {
+          safeTags.push(cleaned);
+        }
+      }
+    }
+  }
+
+  return {
+    id: rawId,
+    title: safeTitle,
+    description: safeDesc,
+    completed: safeCompleted,
+    completedAt: safeCompletedAt,
+    createdAt: safeCreatedAt,
+    updatedAt: safeUpdatedAt,
+    dueDate: safeDueDate,
+    priority: safePriority,
+    category: safeCategory,
+    subtasks: safeSubtasks,
+    estimatedMinutes: safeMinutes,
+    tags: safeTags,
+  };
+}

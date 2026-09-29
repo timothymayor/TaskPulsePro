@@ -30,6 +30,9 @@ jobs:
       - name: Run TypeScript type check
         run: npm run lint
 
+      - name: Run automated API endpoint test suite
+        run: npm test
+
       - name: Dependency vulnerability audit
         run: npm audit --audit-level=high || echo "Vulnerability audit completed with notes"
 
