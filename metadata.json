@@ -1,0 +1,6 @@
+{
+  "name": "TaskPulse Pro - High-Performance To-Do & Workflow Manager",
+  "description": "Enterprise-grade, secure, and blazing-fast to-do and task management web application with comprehensive filtering, subtasks, data integrity validation, and CI/CD readiness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
