@@ -68,7 +68,7 @@ The codebase enforces robust client-side security controls matching OWASP Top 10
    git add .
    git commit -m "feat: complete production-ready TaskPulse Pro"
    git branch -M main
-   git remote add origin https://github.com/<your-username>/<your-repo-name>.git
+   git remote add origin https://github.com/<your-username>/TaskPulse-Pro.git
    git push -u origin main
    ```
 
