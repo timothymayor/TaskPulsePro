@@ -4,6 +4,8 @@ export type Category = 'work' | 'personal' | 'finance' | 'health' | 'learning' |
 
 export type TagColor = 'emerald' | 'sky' | 'violet' | 'amber' | 'rose' | 'indigo' | 'teal' | 'fuchsia';
 
+export type RecurrenceFrequency = 'none' | 'daily' | 'weekly' | 'monthly';
+
 export interface Subtask {
   id: string;
   title: string;
@@ -29,6 +31,8 @@ export interface TodoItem {
   dependencyIds?: string[];
   archived?: boolean;
   archivedAt?: string;
+  frequency?: RecurrenceFrequency;
+  recurrenceSourceId?: string;
 }
 
 export type TaskItem = TodoItem;

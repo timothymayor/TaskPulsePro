@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Plus, Trash2, Shield, Calendar, Clock, Tag, GripVertical, ChevronUp, ChevronDown, ListOrdered, Link2 } from 'lucide-react';
-import { TodoItem, Priority, Category, TagColor } from '../types/todo';
-import { sanitizeString } from '../utils/security';
+import { X, Plus, Trash2, Shield, Calendar, Clock, Tag, GripVertical, ChevronUp, ChevronDown, ListOrdered, Link2, Repeat } from 'lucide-react';
+import { TodoItem, Priority, Category, TagColor, RecurrenceFrequency } from '../types/todo';
+import { sanitizeString, computeNextDueDate } from '../utils/security';
 import { TAG_COLOR_OPTIONS, TAG_COLOR_STYLES, getTagStyle, resolveTagColor } from '../utils/tags';
 
 interface TaskModalProps {
@@ -19,6 +19,7 @@ interface TaskModalProps {
     tagColors?: Record<string, TagColor>;
     order?: number;
     dependencyIds?: string[];
+    frequency?: RecurrenceFrequency;
   }) => void;
   initialTodo?: TodoItem | null;
   totalTasksCount?: number;
@@ -38,6 +39,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [priority, setPriority] = useState<Priority>('medium');
   const [category, setCategory] = useState<Category>('work');
   const [dueDate, setDueDate] = useState('');
+  const [frequency, setFrequency] = useState<RecurrenceFrequency>('none');
   const [estimatedMinutes, setEstimatedMinutes] = useState<number | ''>('');
   const [subtasks, setSubtasks] = useState<string[]>([]);
   const [subtaskInput, setSubtaskInput] = useState('');
@@ -84,6 +86,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority(initialTodo.priority || 'medium');
       setCategory(initialTodo.category || 'work');
       setDueDate(initialTodo.dueDate || '');
+      setFrequency(initialTodo.frequency || 'none');
       setEstimatedMinutes(initialTodo.estimatedMinutes || '');
       setSubtasks(initialTodo.subtasks ? initialTodo.subtasks.map(s => s.title) : []);
       setTags(initialTodo.tags ? [...initialTodo.tags] : []);
@@ -100,6 +103,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setPriority('medium');
       setCategory('work');
       setDueDate(new Date().toISOString().split('T')[0]);
+      setFrequency('none');
       setEstimatedMinutes(30);
       setSubtasks([]);
       setTags([]);
@@ -236,6 +240,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       tagColors: Object.keys(mergedTagColors).length > 0 ? mergedTagColors : undefined,
       order: typeof order === 'number' && order > 0 ? order : 1,
       dependencyIds,
+      frequency,
     });
 
     onClose();
@@ -406,8 +411,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
           </div>
 
-          {/* Two-column Row: Due Date & Estimated Duration */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Three-column Row: Due Date, Recurrence Frequency & Estimated Duration */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label htmlFor="task-due-date" className="block text-xs font-medium text-neutral-700 dark:text-neutral-300">
                 Due Date
@@ -424,8 +429,31 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </div>
 
             <div>
+              <label htmlFor="task-frequency" className="flex items-center gap-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+                <Repeat className="h-3 w-3 text-neutral-500" />
+                <span>Recurrence</span>
+              </label>
+              <select
+                id="task-frequency"
+                value={frequency}
+                onChange={e => setFrequency(e.target.value as RecurrenceFrequency)}
+                className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-neutral-900 focus:border-neutral-900 focus:outline-hidden dark:border-neutral-700 dark:bg-neutral-800 dark:text-white dark:focus:border-neutral-100"
+              >
+                <option value="none">One-time (No repeat)</option>
+                <option value="daily">Daily (Every day)</option>
+                <option value="weekly">Weekly (Every 7 days)</option>
+                <option value="monthly">Monthly (Every month)</option>
+              </select>
+              {frequency !== 'none' && (
+                <p className="mt-1 text-[11px] font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                  Next: {computeNextDueDate(dueDate || undefined, frequency)}
+                </p>
+              )}
+            </div>
+
+            <div>
               <label htmlFor="task-duration" className="block text-xs font-medium text-neutral-700 dark:text-neutral-300">
-                Estimated Focus Time (mins)
+                Focus Time (mins)
               </label>
               <input
                 id="task-duration"

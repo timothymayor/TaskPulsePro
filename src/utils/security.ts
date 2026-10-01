@@ -1,6 +1,67 @@
-import { TodoItem, Priority, Category, TagColor, SecurityCheckResult } from '../types/todo';
+import { TodoItem, Priority, Category, TagColor, RecurrenceFrequency, SecurityCheckResult } from '../types/todo';
 
 const VALID_TAG_COLORS: TagColor[] = ['emerald', 'sky', 'violet', 'amber', 'rose', 'indigo', 'teal', 'fuchsia'];
+const VALID_FREQUENCIES: RecurrenceFrequency[] = ['none', 'daily', 'weekly', 'monthly'];
+
+/**
+ * Computes the next YYYY-MM-DD due date for a recurring task based on its frequency.
+ */
+export function computeNextDueDate(currentDueDate: string | undefined, frequency: RecurrenceFrequency): string {
+  const baseStr = currentDueDate && /^\d{4}-\d{2}-\d{2}$/.test(currentDueDate)
+    ? currentDueDate
+    : new Date().toISOString().split('T')[0];
+  const [year, month, day] = baseStr.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (frequency === 'daily') {
+    date.setUTCDate(date.getUTCDate() + 1);
+  } else if (frequency === 'weekly') {
+    date.setUTCDate(date.getUTCDate() + 7);
+  } else if (frequency === 'monthly') {
+    date.setUTCMonth(date.getUTCMonth() + 1);
+  }
+
+  return date.toISOString().split('T')[0];
+}
+
+/**
+ * Creates a fresh uncompleted TodoItem cloned from a completed recurring task.
+ */
+export function createRecurringTaskInstance(completedTask: TodoItem): TodoItem | null {
+  if (!completedTask.frequency || completedTask.frequency === 'none') {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const nextDueDate = computeNextDueDate(completedTask.dueDate, completedTask.frequency);
+
+  return {
+    id: `tp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    title: completedTask.title,
+    description: completedTask.description,
+    completed: false,
+    completedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+    dueDate: nextDueDate,
+    priority: completedTask.priority,
+    category: completedTask.category,
+    subtasks: (completedTask.subtasks || []).map((st, idx) => ({
+      id: `st-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+      title: st.title,
+      completed: false,
+    })),
+    estimatedMinutes: completedTask.estimatedMinutes,
+    tags: [...(completedTask.tags || [])],
+    tagColors: completedTask.tagColors ? { ...completedTask.tagColors } : undefined,
+    order: completedTask.order,
+    dependencyIds: [],
+    archived: false,
+    archivedAt: undefined,
+    frequency: completedTask.frequency,
+    recurrenceSourceId: completedTask.id,
+  };
+}
 
 /**
  * Strips dangerous HTML tags and script-execution vectors while preserving safe text characters.
@@ -191,6 +252,18 @@ export function validateTodoItem(raw: unknown): TodoItem | null {
     ? (obj.archivedAt && typeof obj.archivedAt === 'string' && !isNaN(Date.parse(obj.archivedAt)) ? obj.archivedAt : now)
     : undefined;
 
+  // Recurrence frequency
+  const rawFrequency = obj.frequency as RecurrenceFrequency;
+  const safeFrequency: RecurrenceFrequency | undefined =
+    typeof rawFrequency === 'string' && VALID_FREQUENCIES.includes(rawFrequency)
+      ? rawFrequency
+      : undefined;
+
+  const safeRecurrenceSourceId =
+    typeof obj.recurrenceSourceId === 'string' && /^[a-zA-Z0-9_-]{1,64}$/.test(obj.recurrenceSourceId)
+      ? obj.recurrenceSourceId
+      : undefined;
+
   return {
     id: safeId,
     title: safeTitle,
@@ -210,6 +283,8 @@ export function validateTodoItem(raw: unknown): TodoItem | null {
     dependencyIds: safeDependencyIds,
     archived: safeArchived,
     archivedAt: safeArchivedAt,
+    frequency: safeFrequency,
+    recurrenceSourceId: safeRecurrenceSourceId,
   };
 }
 

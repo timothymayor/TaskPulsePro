@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { TodoItem, Priority, Category, TagColor, FilterView, SortOption, Subtask } from '../types/todo';
+import { TodoItem, Priority, Category, TagColor, RecurrenceFrequency, FilterView, SortOption, Subtask } from '../types/todo';
 import { loadTodosFromStorage, saveTodosToStorage, INITIAL_TODOS, exportBackupData, parseAndValidateBackup, loadDailyGoal, saveDailyGoal } from '../utils/storage';
-import { sanitizeString, validateTodoItem } from '../utils/security';
+import { sanitizeString, validateTodoItem, createRecurringTaskInstance } from '../utils/security';
 
 function isTaskCompletedToday(t: TodoItem, todayStr: string): boolean {
   if (!t.completed) return false;
@@ -27,6 +27,7 @@ export function useTodos() {
   const [sortBy, setSortBy] = useState<SortOption>('rank');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastDeletedTodo, setLastDeletedTodo] = useState<TodoItem | null>(null);
+  const [lastRecreatedTodo, setLastRecreatedTodo] = useState<TodoItem | null>(null);
 
   // Sync to localStorage whenever todos change
   useEffect(() => {
@@ -67,7 +68,7 @@ export function useTodos() {
     }
   }, []);
 
-  // Add todo with optional priority rank
+  // Add todo with optional priority rank and recurrence frequency
   const addTodo = useCallback((data: {
     title: string;
     description?: string;
@@ -80,6 +81,7 @@ export function useTodos() {
     tagColors?: Record<string, TagColor>;
     order?: number;
     dependencyIds?: string[];
+    frequency?: RecurrenceFrequency;
   }): TodoItem | null => {
     const safeTitle = sanitizeString(data.title, 200);
     if (!safeTitle) return null;
@@ -105,6 +107,7 @@ export function useTodos() {
       tagColors: data.tagColors,
       order: data.order,
       dependencyIds: Array.isArray(data.dependencyIds) ? data.dependencyIds.filter(Boolean) : [],
+      frequency: data.frequency && data.frequency !== 'none' ? data.frequency : undefined,
     };
 
     setTodos(prev => {
@@ -290,9 +293,11 @@ export function useTodos() {
 
     setTodos(prev => {
       const now = new Date().toISOString();
-      const next = prev.map(t => {
+      let spawnedRecurring: TodoItem | null = null;
+
+      let next = prev.map(t => {
         if (t.id === id) {
-          return {
+          const updatedItem: TodoItem = {
             ...t,
             completed: willBeCompleted,
             completedAt: willBeCompleted ? now : undefined,
@@ -300,9 +305,27 @@ export function useTodos() {
             archivedAt: willBeCompleted ? t.archivedAt : undefined,
             updatedAt: now,
           };
+
+          if (willBeCompleted && updatedItem.frequency && updatedItem.frequency !== 'none') {
+            const alreadySpawned = prev.some(existing => existing.recurrenceSourceId === t.id);
+            if (!alreadySpawned) {
+              spawnedRecurring = createRecurringTaskInstance(updatedItem);
+            }
+          }
+
+          return updatedItem;
         }
         return t;
       });
+
+      if (spawnedRecurring) {
+        const created = spawnedRecurring as TodoItem;
+        setLastRecreatedTodo(created);
+        next = [created, ...next].map((item, idx) => ({
+          ...item,
+          order: idx + 1,
+        }));
+      }
 
       if (willBeCompleted) {
         const remainingActive = next.filter(t => !t.completed && !t.archived).length;
@@ -496,23 +519,50 @@ export function useTodos() {
 
   // Subtask management
   const toggleSubtask = useCallback((todoId: string, subtaskId: string) => {
-    setTodos(prev => prev.map(t => {
-      if (t.id !== todoId) return t;
-      const updatedSubtasks = t.subtasks.map(st => {
-        if (st.id === subtaskId) {
-          return { ...st, completed: !st.completed };
+    setTodos(prev => {
+      const now = new Date().toISOString();
+      let spawnedRecurring: TodoItem | null = null;
+
+      let next = prev.map(t => {
+        if (t.id !== todoId) return t;
+        const updatedSubtasks = t.subtasks.map(st => {
+          if (st.id === subtaskId) {
+            return { ...st, completed: !st.completed };
+          }
+          return st;
+        });
+        // Check if all subtasks completed
+        const allSubtasksDone = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed);
+        const becomingCompleted = allSubtasksDone && !t.completed;
+        const updatedItem: TodoItem = {
+          ...t,
+          subtasks: updatedSubtasks,
+          completed: allSubtasksDone ? true : t.completed,
+          completedAt: becomingCompleted ? now : t.completedAt,
+          updatedAt: now,
+        };
+
+        if (becomingCompleted && updatedItem.frequency && updatedItem.frequency !== 'none') {
+          const alreadySpawned = prev.some(existing => existing.recurrenceSourceId === t.id);
+          if (!alreadySpawned) {
+            spawnedRecurring = createRecurringTaskInstance(updatedItem);
+          }
         }
-        return st;
+
+        return updatedItem;
       });
-      // Check if all subtasks completed
-      const allSubtasksDone = updatedSubtasks.length > 0 && updatedSubtasks.every(st => st.completed);
-      return {
-        ...t,
-        subtasks: updatedSubtasks,
-        completed: allSubtasksDone ? true : t.completed,
-        updatedAt: new Date().toISOString(),
-      };
-    }));
+
+      if (spawnedRecurring) {
+        const created = spawnedRecurring as TodoItem;
+        setLastRecreatedTodo(created);
+        next = [created, ...next].map((item, idx) => ({
+          ...item,
+          order: idx + 1,
+        }));
+      }
+
+      return next;
+    });
   }, []);
 
   const addSubtask = useCallback((todoId: string, title: string) => {
@@ -573,19 +623,42 @@ export function useTodos() {
   const bulkToggleComplete = useCallback((status: boolean) => {
     const now = new Date().toISOString();
     const ids = Array.from(selectedIds);
-    setTodos(prev => prev.map(t => {
-      if (selectedIds.has(t.id)) {
-        return {
-          ...t,
-          completed: status,
-          completedAt: status ? now : undefined,
-          archived: status ? t.archived : false,
-          archivedAt: status ? t.archivedAt : undefined,
-          updatedAt: now,
-        };
+    setTodos(prev => {
+      const spawnedList: TodoItem[] = [];
+      const updated = prev.map(t => {
+        if (selectedIds.has(t.id)) {
+          const becomingCompleted = status && !t.completed;
+          const updatedItem: TodoItem = {
+            ...t,
+            completed: status,
+            completedAt: status ? now : undefined,
+            archived: status ? t.archived : false,
+            archivedAt: status ? t.archivedAt : undefined,
+            updatedAt: now,
+          };
+          if (becomingCompleted && updatedItem.frequency && updatedItem.frequency !== 'none') {
+            const alreadySpawned = prev.some(existing => existing.recurrenceSourceId === t.id);
+            if (!alreadySpawned) {
+              const nextInstance = createRecurringTaskInstance(updatedItem);
+              if (nextInstance) {
+                spawnedList.push(nextInstance);
+              }
+            }
+          }
+          return updatedItem;
+        }
+        return t;
+      });
+
+      if (spawnedList.length > 0) {
+        setLastRecreatedTodo(spawnedList[0]);
+        return [...spawnedList, ...updated].map((item, idx) => ({
+          ...item,
+          order: idx + 1,
+        }));
       }
-      return t;
-    }));
+      return updated;
+    });
     fetch('/api/todos/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -814,6 +887,8 @@ export function useTodos() {
     deleteTodo,
     undoDelete,
     lastDeletedTodo,
+    lastRecreatedTodo,
+    clearRecreatedNotification: () => setLastRecreatedTodo(null),
     addSubtask,
     toggleSubtask,
     deleteSubtask,

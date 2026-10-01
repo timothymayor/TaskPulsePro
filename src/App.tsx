@@ -17,7 +17,7 @@ import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { ProductivityDashboard } from './components/ProductivityDashboard';
 import { EmptyState } from './components/EmptyState';
 import { TodoItem } from './types/todo';
-import { RotateCcw, ShieldCheck, Lock, X } from 'lucide-react';
+import { RotateCcw, ShieldCheck, Lock, X, Repeat } from 'lucide-react';
 
 export default function App() {
   const {
@@ -47,6 +47,8 @@ export default function App() {
     deleteTodo,
     undoDelete,
     lastDeletedTodo,
+    lastRecreatedTodo,
+    clearRecreatedNotification,
     addSubtask,
     toggleSubtask,
     deleteSubtask,
@@ -179,6 +181,7 @@ export default function App() {
     tagColors?: TodoItem['tagColors'];
     order?: number;
     dependencyIds?: string[];
+    frequency?: TodoItem['frequency'];
   }) => {
     if (editingTodo) {
       updateTodo(editingTodo.id, {
@@ -192,6 +195,7 @@ export default function App() {
         tagColors: data.tagColors,
         order: data.order,
         dependencyIds: data.dependencyIds,
+        frequency: data.frequency,
       });
     } else {
       addTodo(data);
@@ -391,6 +395,35 @@ export default function App() {
           >
             <RotateCcw className="h-3 w-3" />
             <span>Undo</span>
+          </button>
+        </div>
+      )}
+
+      {/* 5b. Recurring Task Recreated Notification Banner */}
+      {lastRecreatedTodo && !lastDeletedTodo && (
+        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-lg border border-indigo-300 bg-indigo-50 px-4 py-3 text-xs text-indigo-950 shadow-lg dark:border-indigo-700/60 dark:bg-neutral-900 dark:text-indigo-200 animate-in fade-in slide-in-from-bottom-2">
+          <Repeat className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+          <span>
+            Recreated <strong className="font-semibold">{lastRecreatedTodo.frequency}</strong> task &ldquo;{lastRecreatedTodo.title.slice(0, 28)}&rdquo;
+            {lastRecreatedTodo.dueDate ? (
+              <span className="font-mono tabular-nums"> · Due {lastRecreatedTodo.dueDate}</span>
+            ) : null}
+          </span>
+          <button
+            onClick={() => {
+              handleNavigateToTask(lastRecreatedTodo.id);
+              clearRecreatedNotification();
+            }}
+            className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+          >
+            View
+          </button>
+          <button
+            onClick={clearRecreatedNotification}
+            className="rounded p-1 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 transition-colors"
+            aria-label="Dismiss notification"
+          >
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
       )}

@@ -66,6 +66,7 @@ export class TodoStore {
         estimatedMinutes: 40,
         tags: ['health', 'routine'],
         order: 3,
+        frequency: 'daily',
       },
     ];
 

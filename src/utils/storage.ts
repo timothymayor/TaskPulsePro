@@ -64,6 +64,7 @@ export const INITIAL_TODOS: TodoItem[] = [
     estimatedMinutes: 40,
     tags: ['health', 'routine'],
     order: 3,
+    frequency: 'daily',
   },
   {
     id: 'tp-task-4',

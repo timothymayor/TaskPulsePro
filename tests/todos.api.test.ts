@@ -471,4 +471,118 @@ describe('Todos API Endpoints (/api/todos)', () => {
       assert.equal(putRes.body.code, 'TASK_NOT_COMPLETED');
     });
   });
+
+  describe('Recurring Tasks & Automatic Recreation (frequency)', () => {
+    it('should create a recurring task with frequency setting and filter by frequency', async () => {
+      const createRes = await request(app).post('/api/todos').send({
+        title: 'Daily standup sync and blocker review',
+        priority: 'medium',
+        category: 'work',
+        dueDate: '2026-10-10',
+        frequency: 'daily',
+        subtasks: [{ id: 'st-rec-1', title: 'Prepare yesterday summary', completed: true }],
+      });
+
+      assert.equal(createRes.status, 201);
+      assert.equal(createRes.body.data.frequency, 'daily');
+
+      const filterRes = await request(app).get('/api/todos?frequency=daily');
+      assert.equal(filterRes.status, 200);
+      assert.ok(filterRes.body.data.every((t: { frequency?: string }) => t.frequency === 'daily'));
+    });
+
+    it('should automatically recreate a daily recurring task with next day dueDate and reset subtasks when completed', async () => {
+      const createRes = await request(app).post('/api/todos').send({
+        title: 'Daily database backup verification',
+        description: 'Verify snapshot integrity and replication lag.',
+        priority: 'high',
+        category: 'work',
+        dueDate: '2026-10-10',
+        frequency: 'daily',
+        tags: ['devops', 'backup'],
+        subtasks: [{ id: 'st-db-1', title: 'Check S3 bucket checksum', completed: true }],
+      });
+      const taskId = createRes.body.data.id;
+
+      // Complete the recurring task
+      const completeRes = await request(app).put(`/api/todos/${taskId}`).send({
+        completed: true,
+      });
+      assert.equal(completeRes.status, 200);
+      assert.equal(completeRes.body.data.completed, true);
+
+      // Verify a new uncompleted task was automatically created with dueDate advanced by 1 day
+      const listRes = await request(app).get('/api/todos');
+      const recreated = listRes.body.data.find(
+        (t: { recurrenceSourceId?: string }) => t.recurrenceSourceId === taskId
+      );
+      assert.ok(recreated, 'Expected a recreated recurring task instance');
+      assert.equal(recreated.title, 'Daily database backup verification');
+      assert.equal(recreated.completed, false);
+      assert.equal(recreated.dueDate, '2026-10-11');
+      assert.equal(recreated.frequency, 'daily');
+      assert.deepEqual(recreated.tags, ['devops', 'backup']);
+      assert.equal(recreated.subtasks.length, 1);
+      assert.equal(recreated.subtasks[0].completed, false);
+    });
+
+    it('should automatically recreate weekly and monthly recurring tasks with correct next due dates', async () => {
+      const weeklyRes = await request(app).post('/api/todos').send({
+        title: 'Weekly sprint retrospective',
+        dueDate: '2026-10-10',
+        frequency: 'weekly',
+      });
+      const weeklyId = weeklyRes.body.data.id;
+
+      await request(app).put(`/api/todos/${weeklyId}`).send({ completed: true });
+
+      const monthlyRes = await request(app).post('/api/todos').send({
+        title: 'Monthly infrastructure billing reconciliation',
+        dueDate: '2026-10-10',
+        frequency: 'monthly',
+      });
+      const monthlyId = monthlyRes.body.data.id;
+
+      await request(app).put(`/api/todos/${monthlyId}`).send({ completed: true });
+
+      const listRes = await request(app).get('/api/todos');
+      const recreatedWeekly = listRes.body.data.find(
+        (t: { recurrenceSourceId?: string }) => t.recurrenceSourceId === weeklyId
+      );
+      const recreatedMonthly = listRes.body.data.find(
+        (t: { recurrenceSourceId?: string }) => t.recurrenceSourceId === monthlyId
+      );
+
+      assert.ok(recreatedWeekly);
+      assert.equal(recreatedWeekly.dueDate, '2026-10-17');
+      assert.equal(recreatedWeekly.frequency, 'weekly');
+
+      assert.ok(recreatedMonthly);
+      assert.equal(recreatedMonthly.dueDate, '2026-11-10');
+      assert.equal(recreatedMonthly.frequency, 'monthly');
+    });
+
+    it('should recreate recurring tasks when completed via POST /api/todos/bulk', async () => {
+      const createRes = await request(app).post('/api/todos').send({
+        title: 'Bulk completed weekly security scan',
+        dueDate: '2026-10-01',
+        frequency: 'weekly',
+      });
+      const taskId = createRes.body.data.id;
+
+      const bulkRes = await request(app).post('/api/todos/bulk').send({
+        action: 'complete',
+        ids: [taskId],
+      });
+      assert.equal(bulkRes.status, 200);
+
+      const listRes = await request(app).get('/api/todos');
+      const recreated = listRes.body.data.find(
+        (t: { recurrenceSourceId?: string }) => t.recurrenceSourceId === taskId
+      );
+      assert.ok(recreated);
+      assert.equal(recreated.completed, false);
+      assert.equal(recreated.dueDate, '2026-10-08');
+    });
+  });
 });

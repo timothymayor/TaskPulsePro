@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { todoStore } from '../store';
 import { ApiResponse, TodoItem, Priority, Category, Subtask } from '../types';
-import { validateAndSanitizeTodo, sanitizeString } from '../utils/security';
+import { validateAndSanitizeTodo, sanitizeString, createRecurringTaskInstance } from '../utils/security';
 
 const router = Router();
 
@@ -16,7 +16,7 @@ function sendResponse<T>(res: Response, status: number, payload: { success: bool
 // 1. GET /api/todos
 router.get('/', (req: Request, res: Response) => {
   let list = todoStore.getAll();
-  const { category, priority, completed, archived, tag, search } = req.query;
+  const { category, priority, completed, archived, frequency, tag, search } = req.query;
 
   if (typeof category === 'string' && category !== 'all') {
     list = list.filter(t => t.category === category);
@@ -34,6 +34,10 @@ router.get('/', (req: Request, res: Response) => {
   if (typeof archived === 'string') {
     const isArchived = archived === 'true';
     list = list.filter(t => Boolean(t.archived) === isArchived);
+  }
+
+  if (typeof frequency === 'string' && frequency !== 'all') {
+    list = list.filter(t => (t.frequency || 'none') === frequency);
   }
 
   if (typeof tag === 'string' && tag.trim() && tag !== 'all') {
@@ -142,6 +146,18 @@ router.put('/:id', (req: Request, res: Response) => {
   }
 
   todoStore.set(validated);
+
+  // Automatically recreate next occurrence when a recurring task is completed
+  if (validated.completed && !existing.completed && validated.frequency && validated.frequency !== 'none') {
+    const alreadySpawned = todoStore.getAll().some(t => t.recurrenceSourceId === existing.id);
+    if (!alreadySpawned) {
+      const nextInstance = createRecurringTaskInstance(validated);
+      if (nextInstance) {
+        todoStore.set(nextInstance);
+      }
+    }
+  }
+
   return sendResponse(res, 200, { success: true, data: validated });
 });
 
@@ -239,17 +255,30 @@ router.post('/bulk', (req: Request, res: Response) => {
     }
   } else if (action === 'complete' || action === 'incomplete') {
     const isCompleted = action === 'complete';
-    for (const item of todoStore.getAll()) {
+    const currentAll = todoStore.getAll();
+    for (const item of currentAll) {
       if (targetSet.has(item.id)) {
-        todoStore.set({
+        const wasCompleted = item.completed;
+        const updatedItem: TodoItem = {
           ...item,
           completed: isCompleted,
           completedAt: isCompleted ? now : undefined,
           archived: isCompleted ? item.archived : false,
           archivedAt: isCompleted ? item.archivedAt : undefined,
           updatedAt: now,
-        });
+        };
+        todoStore.set(updatedItem);
         affected++;
+
+        if (isCompleted && !wasCompleted && updatedItem.frequency && updatedItem.frequency !== 'none') {
+          const alreadySpawned = todoStore.getAll().some(t => t.recurrenceSourceId === item.id);
+          if (!alreadySpawned) {
+            const nextInstance = createRecurringTaskInstance(updatedItem);
+            if (nextInstance) {
+              todoStore.set(nextInstance);
+            }
+          }
+        }
       }
     }
   } else if (action === 'archive') {

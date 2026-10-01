@@ -16,6 +16,7 @@ import {
   Link2,
   Archive,
   ArchiveRestore,
+  Repeat,
 } from 'lucide-react';
 import { TodoItem, Priority } from '../types/todo';
 import { getTagStyle } from '../utils/tags';
@@ -318,6 +319,20 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 <span className={`inline-flex items-center gap-1 ${isOverdue ? 'text-rose-600 dark:text-rose-400 font-medium' : ''}`}>
                   <Calendar className="h-3 w-3" />
                   <span>{dueLabel}</span>
+                </span>
+              </>
+            )}
+
+            {/* Recurrence Frequency */}
+            {todo.frequency && todo.frequency !== 'none' && (
+              <>
+                <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                <span
+                  className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-medium"
+                  title={`Recurring ${todo.frequency} task — automatically recreated when completed`}
+                >
+                  <Repeat className="h-3 w-3 shrink-0" />
+                  <span className="capitalize">Repeats {todo.frequency}</span>
                 </span>
               </>
             )}
