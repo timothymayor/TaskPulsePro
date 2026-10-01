@@ -45,6 +45,7 @@ export class TodoStore {
         ],
         estimatedMinutes: 60,
         tags: ['finance', 'reporting'],
+        dependencyIds: ['tp-1'],
       },
       {
         id: 'tp-3',
@@ -64,8 +65,13 @@ export class TodoStore {
         ],
         estimatedMinutes: 40,
         tags: ['health', 'routine'],
+        order: 3,
       },
     ];
+
+    // Ensure sample items 1 and 2 also have order
+    sampleItems[0].order = 1;
+    sampleItems[1].order = 2;
 
     for (const item of sampleItems) {
       this.todos.set(item.id, item);
@@ -73,9 +79,14 @@ export class TodoStore {
   }
 
   getAll(): TodoItem[] {
-    return Array.from(this.todos.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    return Array.from(this.todos.values()).sort((a, b) => {
+      if (a.order !== undefined && b.order !== undefined) {
+        return a.order - b.order;
+      }
+      if (a.order !== undefined) return -1;
+      if (b.order !== undefined) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
   }
 
   getById(id: string): TodoItem | undefined {

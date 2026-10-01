@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Check,
   Calendar,
@@ -9,36 +9,81 @@ import {
   Edit2,
   ChevronDown,
   ChevronRight,
-  ListTodo
+  ChevronUp,
+  ListTodo,
+  GripVertical,
+  Lock,
+  Link2,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import { TodoItem, Priority } from '../types/todo';
 
 interface TaskCardProps {
   todo: TodoItem;
+  rankNumber: number;
   isSelected: boolean;
   onToggleSelect: (id: string) => void;
   onToggleComplete: (id: string) => void;
+  onArchive?: (id: string) => void;
+  onUnarchive?: (id: string) => void;
   onEdit: (todo: TodoItem) => void;
   onDelete: (id: string) => void;
   onToggleSubtask: (todoId: string, subtaskId: string) => void;
   onAddSubtask: (todoId: string, title: string) => void;
   onDeleteSubtask: (todoId: string, subtaskId: string) => void;
+  onDragStart?: (e: React.DragEvent, id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent, id: string) => void;
+  onMoveNudge?: (id: string, direction: 'up' | 'down') => void;
+  isDragOver?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  allTodos?: TodoItem[];
+  onNavigateToTask?: (id: string) => void;
+  onFilterByTag?: (tag: string) => void;
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   todo,
+  rankNumber,
   isSelected,
   onToggleSelect,
   onToggleComplete,
+  onArchive,
+  onUnarchive,
   onEdit,
   onDelete,
   onToggleSubtask,
   onAddSubtask,
   onDeleteSubtask,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onMoveNudge,
+  isDragOver = false,
+  canMoveUp = false,
+  canMoveDown = false,
+  allTodos = [],
+  onNavigateToTask,
+  onFilterByTag,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
   const [showSubtaskInput, setShowSubtaskInput] = useState(false);
+
+  // Compute dependency resolution status
+  const depIds = todo.dependencyIds || [];
+  const todoMap = useMemo(() => new Map(allTodos.map(t => [t.id, t])), [allTodos]);
+  const activeDependencies = useMemo(() => {
+    return depIds.map(id => todoMap.get(id)).filter((t): t is TodoItem => Boolean(t && !t.completed));
+  }, [depIds, todoMap]);
+  const completedDependencies = useMemo(() => {
+    return depIds.map(id => todoMap.get(id)).filter((t): t is TodoItem => Boolean(t && t.completed));
+  }, [depIds, todoMap]);
+  const isBlocked = activeDependencies.length > 0;
 
   // Priority color accents
   const priorityAccents: Record<Priority, { label: string; textClass: string; dotClass: string }> = {
@@ -89,15 +134,70 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
+      id={`task-card-${todo.id}`}
+      draggable
+      onDragStart={e => onDragStart && onDragStart(e, todo.id)}
+      onDragOver={e => onDragOver && onDragOver(e, todo.id)}
+      onDragLeave={e => onDragLeave && onDragLeave(e)}
+      onDrop={e => onDrop && onDrop(e, todo.id)}
       className={`group relative rounded-lg border transition-all duration-150 ${
-        isSelected
+        isDragOver
+          ? 'border-t-2 border-t-neutral-900 dark:border-t-neutral-100 bg-neutral-100/60 dark:bg-neutral-800/60 shadow-md'
+          : isSelected
           ? 'border-neutral-900 bg-neutral-50/80 dark:border-neutral-100 dark:bg-neutral-900/60 shadow-xs'
           : todo.completed
           ? 'border-neutral-200/80 bg-neutral-50/50 dark:border-neutral-800/80 dark:bg-neutral-950/40 opacity-75'
+          : isBlocked
+          ? 'border-neutral-200 border-l-[3px] border-l-amber-500 bg-white dark:border-neutral-800 dark:border-l-amber-500 dark:bg-neutral-900/40 hover:border-neutral-300 dark:hover:border-neutral-700'
           : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900/40 hover:border-neutral-300 dark:hover:border-neutral-700'
       }`}
     >
-      <div className="flex items-start gap-3 p-3.5 sm:p-4">
+      <div className="flex items-start gap-2.5 sm:gap-3 p-3 sm:p-4">
+        {/* Drag Handle & Priority Rank Numerical Badge */}
+        <div className="flex flex-col items-center justify-center gap-0.5 pt-0.5 shrink-0 select-none">
+          <div
+            className="cursor-grab active:cursor-grabbing p-0.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 transition-colors"
+            title="Drag to reorder priority in queue"
+            aria-label="Drag to reorder"
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+          {/* Unboxed Tabular Priority Rank Number */}
+          <span
+            className="font-mono tabular-nums text-[10px] font-semibold text-neutral-400 dark:text-neutral-500"
+            title={`Priority Queue Rank #${rankNumber}`}
+          >
+            #{rankNumber}
+          </span>
+          {/* Quick Nudge Buttons (Accessible on hover/focus) */}
+          {onMoveNudge && (canMoveUp || canMoveDown) && (
+            <div className="flex flex-col items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity -mt-0.5">
+              {canMoveUp && (
+                <button
+                  type="button"
+                  onClick={() => onMoveNudge(todo.id, 'up')}
+                  className="rounded p-0.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                  title="Move priority up"
+                  aria-label="Move priority up"
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+              )}
+              {canMoveDown && (
+                <button
+                  type="button"
+                  onClick={() => onMoveNudge(todo.id, 'down')}
+                  className="rounded p-0.5 text-neutral-400 hover:text-neutral-900 dark:hover:text-white"
+                  title="Move priority down"
+                  aria-label="Move priority down"
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Bulk Selection Checkbox */}
         <div className="flex items-center pt-0.5">
           <input
@@ -109,18 +209,29 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           />
         </div>
 
-        {/* Task Completion Toggle Button */}
-        <button
-          onClick={() => onToggleComplete(todo.id)}
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors mt-0.5 ${
-            todo.completed
-              ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
-              : 'border-neutral-300 hover:border-neutral-500 dark:border-neutral-600 dark:hover:border-neutral-400'
-          }`}
-          aria-label={todo.completed ? 'Mark task as incomplete' : 'Mark task as complete'}
-        >
-          {todo.completed && <Check className="h-3 w-3 stroke-[3]" />}
-        </button>
+        {/* Task Completion Toggle Button (Locked if dependencies are active) */}
+        {isBlocked && !todo.completed ? (
+          <button
+            onClick={() => onToggleComplete(todo.id)}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-amber-400 bg-amber-50/80 text-amber-600 hover:bg-amber-100 hover:border-amber-500 dark:border-amber-600 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-900/40 transition-colors mt-0.5 cursor-pointer shadow-2xs"
+            title={`Completion locked: Prerequisite "${activeDependencies[0]?.title}" is still active`}
+            aria-label={`Task completion locked: waiting on ${activeDependencies.length} prerequisite`}
+          >
+            <Lock className="h-2.5 w-2.5 stroke-[2.5]" />
+          </button>
+        ) : (
+          <button
+            onClick={() => onToggleComplete(todo.id)}
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors mt-0.5 ${
+              todo.completed
+                ? 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500'
+                : 'border-neutral-300 hover:border-neutral-500 dark:border-neutral-600 dark:hover:border-neutral-400'
+            }`}
+            aria-label={todo.completed ? 'Mark task as incomplete' : 'Mark task as complete'}
+          >
+            {todo.completed && <Check className="h-3 w-3 stroke-[3]" />}
+          </button>
+        )}
 
         {/* Task Main Content */}
         <div className="min-w-0 flex-1">
@@ -138,6 +249,26 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 
             {/* Actions for Task (Always accessible on hover or focus) */}
             <div className="flex items-center gap-1 opacity-80 sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity shrink-0">
+              {todo.completed && !todo.archived && onArchive && (
+                <button
+                  onClick={() => onArchive(todo.id)}
+                  className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+                  title="Move completed task to Archive"
+                  aria-label="Archive task"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {todo.archived && onUnarchive && (
+                <button
+                  onClick={() => onUnarchive(todo.id)}
+                  className="rounded p-1 text-neutral-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+                  title="Restore task from Archive to main list"
+                  aria-label="Restore task from Archive"
+                >
+                  <ArchiveRestore className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 onClick={() => onEdit(todo)}
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
@@ -217,13 +348,106 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               </>
             )}
 
+            {/* Dependency / Prerequisite status */}
+            {isBlocked && (
+              <>
+                <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                <span
+                  className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium"
+                  title={`Waiting on prerequisite tasks: ${activeDependencies.map(d => d.title).join(', ')}`}
+                >
+                  <Lock className="h-3 w-3 shrink-0" />
+                  <span>Blocked by:</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onNavigateToTask?.(activeDependencies[0].id);
+                    }}
+                    className="underline decoration-dotted underline-offset-2 hover:text-amber-800 dark:hover:text-amber-300 text-left font-semibold max-w-[160px] sm:max-w-xs truncate"
+                  >
+                    {activeDependencies[0].title}
+                    {activeDependencies.length > 1 ? ` (+${activeDependencies.length - 1})` : ''}
+                  </button>
+                </span>
+              </>
+            )}
+
+            {!isBlocked && depIds.length > 0 && (
+              <>
+                <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                <span className="inline-flex items-center gap-1 text-neutral-500 dark:text-neutral-400 font-mono tabular-nums text-xs">
+                  <Link2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                  <span>Prerequisites met ({completedDependencies.length}/{depIds.length})</span>
+                </span>
+              </>
+            )}
+
             {/* Tags if any */}
             {todo.tags.length > 0 && (
               <>
                 <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
-                <span className="text-neutral-400">
-                  {todo.tags.map(t => `#${t}`).join(' ')}
+                <span className="inline-flex items-center gap-1.5 flex-wrap">
+                  {todo.tags.map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onFilterByTag) {
+                          onFilterByTag(t);
+                        }
+                      }}
+                      className="font-mono text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors cursor-pointer hover:underline decoration-dotted underline-offset-2"
+                      title={`Filter by tag #${t}`}
+                      aria-label={`Filter by tag #${t}`}
+                    >
+                      #{t}
+                    </button>
+                  ))}
                 </span>
+              </>
+            )}
+
+            {/* Inline Archive / Restore Action for Completed Tasks */}
+            {todo.completed && !todo.archived && onArchive && (
+              <>
+                <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                <button
+                  type="button"
+                  onClick={() => onArchive(todo.id)}
+                  className="inline-flex items-center gap-1 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors font-medium cursor-pointer"
+                  title="Move completed task to Archive to declutter main view"
+                >
+                  <Archive className="h-3 w-3" />
+                  <span>Move to Archive</span>
+                </button>
+              </>
+            )}
+
+            {todo.archived && (
+              <>
+                <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                <span className="inline-flex items-center gap-1 text-neutral-500 dark:text-neutral-400 font-mono tabular-nums">
+                  <Archive className="h-3 w-3" />
+                  <span>
+                    Archived{todo.archivedAt ? ` ${todo.archivedAt.split('T')[0]}` : ''}
+                  </span>
+                </span>
+                {onUnarchive && (
+                  <>
+                    <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
+                    <button
+                      type="button"
+                      onClick={() => onUnarchive(todo.id)}
+                      className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 transition-colors font-medium cursor-pointer"
+                      title="Restore task to active/completed queue"
+                    >
+                      <ArchiveRestore className="h-3 w-3" />
+                      <span>Restore</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>

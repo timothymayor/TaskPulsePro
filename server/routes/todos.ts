@@ -16,7 +16,7 @@ function sendResponse<T>(res: Response, status: number, payload: { success: bool
 // 1. GET /api/todos
 router.get('/', (req: Request, res: Response) => {
   let list = todoStore.getAll();
-  const { category, priority, completed, search } = req.query;
+  const { category, priority, completed, archived, search } = req.query;
 
   if (typeof category === 'string' && category !== 'all') {
     list = list.filter(t => t.category === category);
@@ -29,6 +29,11 @@ router.get('/', (req: Request, res: Response) => {
   if (typeof completed === 'string') {
     const isCompleted = completed === 'true';
     list = list.filter(t => t.completed === isCompleted);
+  }
+
+  if (typeof archived === 'string') {
+    const isArchived = archived === 'true';
+    list = list.filter(t => Boolean(t.archived) === isArchived);
   }
 
   if (typeof search === 'string' && search.trim()) {
@@ -63,6 +68,11 @@ router.post('/', (req: Request, res: Response) => {
     return sendResponse(res, 400, { success: false, error: 'Valid title is required', code: 'VALIDATION_FAILED' });
   }
 
+  if (!validated.completed && validated.archived) {
+    validated.archived = false;
+    validated.archivedAt = undefined;
+  }
+
   todoStore.set(validated);
   return sendResponse(res, 201, { success: true, data: validated });
 });
@@ -91,6 +101,41 @@ router.put('/:id', (req: Request, res: Response) => {
     return sendResponse(res, 400, { success: false, error: 'Validation failed on updated fields', code: 'VALIDATION_FAILED' });
   }
 
+  // Prevent archiving an incomplete task
+  if (req.body.archived === true && !validated.completed) {
+    return sendResponse(res, 422, {
+      success: false,
+      error: 'Only completed tasks can be moved to the archive',
+      code: 'TASK_NOT_COMPLETED',
+    });
+  }
+
+  // Automatically unarchive if task is marked incomplete
+  if (!validated.completed) {
+    validated.archived = false;
+    validated.archivedAt = undefined;
+  }
+
+  // Prevent completion of task if its prerequisite dependencies are still active
+  if (validated.completed && !existing.completed) {
+    const deps = validated.dependencyIds || [];
+    const activeDependencies: { id: string; title: string }[] = [];
+    for (const depId of deps) {
+      const depItem = todoStore.getById(depId);
+      if (depItem && !depItem.completed) {
+        activeDependencies.push({ id: depItem.id, title: depItem.title });
+      }
+    }
+    if (activeDependencies.length > 0) {
+      return sendResponse(res, 422, {
+        success: false,
+        error: `Cannot complete task while active prerequisite dependencies remain uncompleted: "${activeDependencies[0].title}"`,
+        code: 'DEPENDENCIES_UNRESOLVED',
+        data: { activeDependencies },
+      });
+    }
+  }
+
   todoStore.set(validated);
   return sendResponse(res, 200, { success: true, data: validated });
 });
@@ -103,6 +148,17 @@ router.delete('/:id', (req: Request, res: Response) => {
   }
 
   todoStore.delete(req.params.id);
+
+  // Clean up any references to this task in other tasks' dependencyIds
+  for (const item of todoStore.getAll()) {
+    if (item.dependencyIds && item.dependencyIds.includes(req.params.id)) {
+      todoStore.set({
+        ...item,
+        dependencyIds: item.dependencyIds.filter(depId => depId !== req.params.id),
+      });
+    }
+  }
+
   return sendResponse(res, 200, { success: true, data: { deletedId: req.params.id } });
 });
 
@@ -184,6 +240,32 @@ router.post('/bulk', (req: Request, res: Response) => {
           ...item,
           completed: isCompleted,
           completedAt: isCompleted ? now : undefined,
+          archived: isCompleted ? item.archived : false,
+          archivedAt: isCompleted ? item.archivedAt : undefined,
+          updatedAt: now,
+        });
+        affected++;
+      }
+    }
+  } else if (action === 'archive') {
+    for (const item of todoStore.getAll()) {
+      if (targetSet.has(item.id) && item.completed && !item.archived) {
+        todoStore.set({
+          ...item,
+          archived: true,
+          archivedAt: now,
+          updatedAt: now,
+        });
+        affected++;
+      }
+    }
+  } else if (action === 'unarchive') {
+    for (const item of todoStore.getAll()) {
+      if (targetSet.has(item.id) && item.archived) {
+        todoStore.set({
+          ...item,
+          archived: false,
+          archivedAt: undefined,
           updatedAt: now,
         });
         affected++;
@@ -216,6 +298,115 @@ router.post('/bulk', (req: Request, res: Response) => {
   }
 
   return sendResponse(res, 200, { success: true, data: { affectedCount: affected } });
+});
+
+// 9. POST /api/todos/reorder
+router.post('/reorder', (req: Request, res: Response) => {
+  const { orderedIds } = req.body || {};
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return sendResponse(res, 400, { success: false, error: 'orderedIds must be a non-empty array of task IDs', code: 'INVALID_ORDERED_IDS' });
+  }
+
+  // Validate that all elements in orderedIds are non-empty strings
+  const areAllStrings = orderedIds.every(id => typeof id === 'string' && id.trim().length > 0);
+  if (!areAllStrings) {
+    return sendResponse(res, 400, { success: false, error: 'All orderedIds must be valid non-empty string IDs', code: 'INVALID_ID_TYPE' });
+  }
+
+  const now = new Date().toISOString();
+  let updatedCount = 0;
+
+  orderedIds.forEach((id: string, index: number) => {
+    const item = todoStore.getById(id);
+    if (item) {
+      todoStore.set({
+        ...item,
+        order: index + 1,
+        updatedAt: now,
+      });
+      updatedCount++;
+    }
+  });
+
+  return sendResponse(res, 200, {
+    success: true,
+    data: {
+      reorderedCount: updatedCount,
+      totalRequested: orderedIds.length,
+    },
+  });
+});
+
+// 10. POST /api/todos/archive-completed
+router.post('/archive-completed', (_req: Request, res: Response) => {
+  const now = new Date().toISOString();
+  const archivedIds: string[] = [];
+
+  for (const item of todoStore.getAll()) {
+    if (item.completed && !item.archived) {
+      todoStore.set({
+        ...item,
+        archived: true,
+        archivedAt: now,
+        updatedAt: now,
+      });
+      archivedIds.push(item.id);
+    }
+  }
+
+  return sendResponse(res, 200, {
+    success: true,
+    data: {
+      archivedCount: archivedIds.length,
+      archivedIds,
+    },
+  });
+});
+
+// 11. POST /api/todos/:id/archive
+router.post('/:id/archive', (req: Request, res: Response) => {
+  const existing = todoStore.getById(req.params.id);
+  if (!existing) {
+    return sendResponse(res, 404, { success: false, error: 'Todo not found', code: 'NOT_FOUND' });
+  }
+
+  if (!existing.completed) {
+    return sendResponse(res, 422, {
+      success: false,
+      error: 'Only completed tasks can be moved to the archive',
+      code: 'TASK_NOT_COMPLETED',
+    });
+  }
+
+  const now = new Date().toISOString();
+  const updated: TodoItem = {
+    ...existing,
+    archived: true,
+    archivedAt: existing.archivedAt || now,
+    updatedAt: now,
+  };
+
+  todoStore.set(updated);
+  return sendResponse(res, 200, { success: true, data: updated });
+});
+
+// 12. POST /api/todos/:id/unarchive
+router.post('/:id/unarchive', (req: Request, res: Response) => {
+  const existing = todoStore.getById(req.params.id);
+  if (!existing) {
+    return sendResponse(res, 404, { success: false, error: 'Todo not found', code: 'NOT_FOUND' });
+  }
+
+  const now = new Date().toISOString();
+  const updated: TodoItem = {
+    ...existing,
+    archived: false,
+    archivedAt: undefined,
+    updatedAt: now,
+  };
+
+  todoStore.set(updated);
+  return sendResponse(res, 200, { success: true, data: updated });
 });
 
 export default router;

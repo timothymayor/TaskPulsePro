@@ -22,11 +22,17 @@ export interface TodoItem {
   subtasks: Subtask[];
   estimatedMinutes?: number;
   tags: string[];
+  order?: number;
+  dependencyIds?: string[];
+  archived?: boolean;
+  archivedAt?: string;
 }
 
-export type FilterView = 'all' | 'today' | 'upcoming' | 'completed' | 'urgent' | 'stats';
+export type TaskItem = TodoItem;
 
-export type SortOption = 'dueDate' | 'priority' | 'createdAt' | 'title';
+export type FilterView = 'all' | 'today' | 'upcoming' | 'completed' | 'urgent' | 'archived' | 'stats';
+
+export type SortOption = 'rank' | 'priority' | 'dueDate' | 'createdAt' | 'title';
 
 export interface SecurityCheckResult {
   id: string;

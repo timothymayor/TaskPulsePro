@@ -9,7 +9,8 @@ interface ProductivityDashboardProps {
 export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({ todos }) => {
   const total = todos.length;
   const completed = todos.filter(t => t.completed).length;
-  const active = total - completed;
+  const archived = todos.filter(t => Boolean(t.archived)).length;
+  const active = todos.filter(t => !t.completed && !t.archived).length;
   const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   // Category breakdown
@@ -54,7 +55,7 @@ export const ProductivityDashboard: React.FC<ProductivityDashboardProps> = ({ to
             {completionRate}%
           </div>
           <p className="mt-1 text-xs text-neutral-400 font-mono tabular-nums">
-            {completed} of {total} tasks completed
+            {completed} of {total} completed{archived > 0 ? ` · ${archived} archived` : ''}
           </p>
         </div>
 

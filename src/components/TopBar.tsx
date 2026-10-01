@@ -12,6 +12,7 @@ interface TopBarProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   activeCount: number;
+  archivedCount?: number;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -24,6 +25,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   theme,
   onToggleTheme,
   activeCount,
+  archivedCount = 0,
 }) => {
   return (
     <header className="sticky top-0 z-30 w-full border-b border-neutral-200/80 bg-white/90 backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/90 transition-colors">
@@ -98,6 +100,22 @@ export const TopBar: React.FC<TopBarProps> = ({
             }`}
           >
             Completed
+          </button>
+
+          <button
+            onClick={() => onSelectView('archived')}
+            className={`px-3 py-1.5 text-sm font-medium transition-colors border-b-2 ${
+              currentView === 'archived'
+                ? 'border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+            }`}
+          >
+            Archive
+            {archivedCount > 0 && (
+              <span className="ml-1.5 text-xs font-mono tabular-nums opacity-70">
+                ({archivedCount})
+              </span>
+            )}
           </button>
 
           <button

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, X, CheckSquare, Trash2, ArrowUpDown, Tag, AlertCircle } from 'lucide-react';
+import { Search, X, CheckSquare, Trash2, ArrowUpDown, Tag, Archive, ArchiveRestore } from 'lucide-react';
 import { FilterView, Category, SortOption, Priority } from '../types/todo';
 
 interface FilterBarProps {
@@ -13,8 +13,13 @@ interface FilterBarProps {
   onSortChange: (sort: SortOption) => void;
   selectedCount: number;
   totalFilteredCount: number;
+  completedUnarchivedCount?: number;
+  archivedCount?: number;
+  onArchiveCompleted?: () => void;
   onBulkComplete: () => void;
   onBulkIncomplete: () => void;
+  onBulkArchive?: () => void;
+  onBulkUnarchive?: () => void;
   onBulkDelete: () => void;
   onBulkCategory: (cat: Category) => void;
   onBulkPriority: (pri: Priority) => void;
@@ -33,8 +38,13 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
   onSortChange,
   selectedCount,
   totalFilteredCount,
+  completedUnarchivedCount = 0,
+  archivedCount = 0,
+  onArchiveCompleted,
   onBulkComplete,
   onBulkIncomplete,
+  onBulkArchive,
+  onBulkUnarchive,
   onBulkDelete,
   onBulkCategory,
   onBulkPriority,
@@ -79,7 +89,7 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
 
         {/* View segmented control */}
         <div className="flex items-center gap-1 overflow-x-auto rounded-lg bg-neutral-100 p-1 dark:bg-neutral-900 border border-neutral-200/60 dark:border-neutral-800">
-          {(['all', 'today', 'upcoming', 'urgent', 'completed'] as FilterView[]).map(view => {
+          {(['all', 'today', 'upcoming', 'urgent', 'completed', 'archived'] as FilterView[]).map(view => {
             const isActive = currentView === view;
             const labels: Record<string, string> = {
               all: 'All',
@@ -87,6 +97,7 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
               upcoming: 'Upcoming',
               urgent: 'Urgent',
               completed: 'Done',
+              archived: archivedCount > 0 ? `Archive (${archivedCount})` : 'Archive',
             };
             return (
               <button
@@ -106,6 +117,20 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
 
         {/* Category & Sorting controls */}
         <div className="flex items-center gap-2">
+          {/* Quick Archive All Completed Button */}
+          {onArchiveCompleted && completedUnarchivedCount > 0 && currentView !== 'archived' && (
+            <button
+              type="button"
+              onClick={onArchiveCompleted}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 transition-colors whitespace-nowrap"
+              title="Move all completed tasks to the Archive list to declutter your queue"
+            >
+              <Archive className="h-3.5 w-3.5 text-neutral-500" />
+              <span>Archive Completed</span>
+              <span className="font-mono tabular-nums text-neutral-400">({completedUnarchivedCount})</span>
+            </button>
+          )}
+
           {/* Category Dropdown */}
           <div className="relative">
             <select
@@ -129,8 +154,9 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
               onChange={e => onSortChange(e.target.value as SortOption)}
               className="appearance-none rounded-lg border border-neutral-300 bg-white px-3 py-1.5 pr-8 text-xs font-medium text-neutral-700 focus:border-neutral-900 focus:outline-hidden dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:focus:border-neutral-100 transition-colors"
             >
-              <option value="dueDate">Due Date</option>
+              <option value="rank">Priority Rank (#1..N)</option>
               <option value="priority">Priority</option>
+              <option value="dueDate">Due Date</option>
               <option value="title">Alphabetical</option>
               <option value="createdAt">Date Created</option>
             </select>
@@ -143,7 +169,7 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
       {selectedCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-900 p-2.5 text-xs text-white dark:border-neutral-700 dark:bg-neutral-800 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
           <div className="flex items-center gap-3">
-            <span className="font-medium font-mono">
+            <span className="font-medium font-mono tabular-nums">
               {selectedCount} item{selectedCount > 1 ? 's' : ''} selected
             </span>
             <button
@@ -160,14 +186,16 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onBulkComplete}
-              className="flex items-center gap-1 rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700 dark:bg-neutral-700 dark:hover:bg-neutral-600 transition-colors"
-            >
-              <CheckSquare className="h-3 w-3 text-emerald-400" />
-              <span>Mark Done</span>
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {currentView !== 'archived' && (
+              <button
+                onClick={onBulkComplete}
+                className="flex items-center gap-1 rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700 dark:bg-neutral-700 dark:hover:bg-neutral-600 transition-colors"
+              >
+                <CheckSquare className="h-3 w-3 text-emerald-400" />
+                <span>Mark Done</span>
+              </button>
+            )}
 
             <button
               onClick={onBulkIncomplete}
@@ -175,6 +203,28 @@ export const TaskFilterBar: React.FC<FilterBarProps> = ({
             >
               <span>Mark Active</span>
             </button>
+
+            {currentView !== 'archived' && onBulkArchive && (
+              <button
+                onClick={onBulkArchive}
+                className="flex items-center gap-1 rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700 dark:bg-neutral-700 dark:hover:bg-neutral-600 transition-colors"
+                title="Move selected completed tasks to Archive"
+              >
+                <Archive className="h-3 w-3 text-neutral-300" />
+                <span>Archive</span>
+              </button>
+            )}
+
+            {currentView === 'archived' && onBulkUnarchive && (
+              <button
+                onClick={onBulkUnarchive}
+                className="flex items-center gap-1 rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700 dark:bg-neutral-700 dark:hover:bg-neutral-600 transition-colors"
+                title="Restore selected tasks from Archive to main list"
+              >
+                <ArchiveRestore className="h-3 w-3 text-emerald-400" />
+                <span>Restore</span>
+              </button>
+            )}
 
             {/* Quick Priority Batch Change */}
             <select

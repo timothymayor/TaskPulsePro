@@ -22,7 +22,13 @@ export interface TodoItem {
   subtasks: Subtask[];
   estimatedMinutes?: number;
   tags: string[];
+  order?: number;
+  dependencyIds?: string[];
+  archived?: boolean;
+  archivedAt?: string;
 }
+
+export type TaskItem = TodoItem;
 
 export interface ApiResponse<T = unknown> {
   success: boolean;

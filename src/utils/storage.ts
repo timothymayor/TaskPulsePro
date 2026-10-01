@@ -22,6 +22,7 @@ export const INITIAL_TODOS: TodoItem[] = [
     ],
     estimatedMinutes: 45,
     tags: ['devops', 'security'],
+    order: 1,
   },
   {
     id: 'tp-task-2',
@@ -39,6 +40,8 @@ export const INITIAL_TODOS: TodoItem[] = [
     ],
     estimatedMinutes: 60,
     tags: ['finance', 'reporting'],
+    order: 2,
+    dependencyIds: ['tp-task-1'],
   },
   {
     id: 'tp-task-3',
@@ -58,6 +61,7 @@ export const INITIAL_TODOS: TodoItem[] = [
     ],
     estimatedMinutes: 40,
     tags: ['health', 'routine'],
+    order: 3,
   },
   {
     id: 'tp-task-4',
@@ -72,6 +76,7 @@ export const INITIAL_TODOS: TodoItem[] = [
     subtasks: [],
     estimatedMinutes: 30,
     tags: ['reading', 'architecture'],
+    order: 4,
   },
 ];
 
@@ -136,8 +141,14 @@ export function saveThemePreference(theme: 'light' | 'dark'): void {
     localStorage.setItem(THEME_KEY, theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
+      document.documentElement.classList.remove('light');
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.style.colorScheme = 'dark';
     } else {
       document.documentElement.classList.remove('dark');
+      document.documentElement.classList.add('light');
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.style.colorScheme = 'light';
     }
   } catch (error) {
     console.warn('Unable to persist theme:', error);

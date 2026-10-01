@@ -103,6 +103,18 @@ describe('Todos API Endpoints (/api/todos)', () => {
       assert.equal(res.status, 201);
       assert.equal((Object.prototype as Record<string, unknown>).polluted, undefined);
     });
+
+    it('should accept, deduplicate, and sanitize custom tags array during creation', async () => {
+      const payload = {
+        title: 'Task with Custom Tags',
+        priority: 'medium',
+        tags: ['Frontend', '  DevOps  ', 'frontend', '<script>tag', 'performance'],
+      };
+      const res = await request(app).post('/api/todos').send(payload);
+      assert.equal(res.status, 201);
+      assert.ok(Array.isArray(res.body.data.tags));
+      assert.deepEqual(res.body.data.tags, ['frontend', 'devops', 'tag', 'performance']);
+    });
   });
 
   describe('PUT /api/todos/:id', () => {
@@ -111,6 +123,7 @@ describe('Todos API Endpoints (/api/todos)', () => {
         title: 'Updated Task Title',
         priority: 'low',
         completed: true,
+        tags: ['refactor', 'architecture'],
       };
 
       const res = await request(app).put('/api/todos/tp-1').send(updates);
@@ -119,6 +132,7 @@ describe('Todos API Endpoints (/api/todos)', () => {
       assert.equal(res.body.data.title, 'Updated Task Title');
       assert.equal(res.body.data.priority, 'low');
       assert.equal(res.body.data.completed, true);
+      assert.deepEqual(res.body.data.tags, ['refactor', 'architecture']);
     });
 
     it('should return 404 when updating non-existent todo', async () => {
@@ -225,6 +239,213 @@ describe('Todos API Endpoints (/api/todos)', () => {
 
       assert.equal(res.status, 400);
       assert.equal(res.body.code, 'UNKNOWN_ACTION');
+    });
+  });
+
+  describe('POST /api/todos/reorder', () => {
+    it('should successfully reorder tasks by updating their numerical priority rank', async () => {
+      // Reorder with reverse sequence: tp-3 first, then tp-2, then tp-1
+      const res = await request(app).post('/api/todos/reorder').send({
+        orderedIds: ['tp-3', 'tp-2', 'tp-1'],
+      });
+
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.reorderedCount, 3);
+      assert.equal(res.body.data.totalRequested, 3);
+
+      // Verify the new order in storage
+      const check3 = await request(app).get('/api/todos/tp-3');
+      const check2 = await request(app).get('/api/todos/tp-2');
+      const check1 = await request(app).get('/api/todos/tp-1');
+
+      assert.equal(check3.body.data.order, 1);
+      assert.equal(check2.body.data.order, 2);
+      assert.equal(check1.body.data.order, 3);
+    });
+
+    it('should reject reorder request when orderedIds is missing or empty', async () => {
+      const emptyRes = await request(app).post('/api/todos/reorder').send({
+        orderedIds: [],
+      });
+      assert.equal(emptyRes.status, 400);
+      assert.equal(emptyRes.body.code, 'INVALID_ORDERED_IDS');
+
+      const missingRes = await request(app).post('/api/todos/reorder').send({});
+      assert.equal(missingRes.status, 400);
+      assert.equal(missingRes.body.code, 'INVALID_ORDERED_IDS');
+    });
+
+    it('should reject reorder request containing non-string IDs', async () => {
+      const res = await request(app).post('/api/todos/reorder').send({
+        orderedIds: ['tp-1', 123, null],
+      });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.code, 'INVALID_ID_TYPE');
+    });
+  });
+
+  describe('Task Prerequisite Dependencies', () => {
+    it('should create a task with dependencyIds linking to an existing task', async () => {
+      const res = await request(app).post('/api/todos').send({
+        title: 'Deploy microservice to production cluster',
+        dependencyIds: ['tp-1'],
+        priority: 'high',
+        category: 'work',
+      });
+
+      assert.equal(res.status, 201);
+      assert.ok(Array.isArray(res.body.data.dependencyIds));
+      assert.deepEqual(res.body.data.dependencyIds, ['tp-1']);
+    });
+
+    it('should prevent completion with 422 if prerequisite dependencies are active', async () => {
+      // tp-2 has dependency tp-1, which is not completed
+      const res = await request(app).put('/api/todos/tp-2').send({
+        completed: true,
+      });
+
+      assert.equal(res.status, 422);
+      assert.equal(res.body.code, 'DEPENDENCIES_UNRESOLVED');
+      assert.ok(res.body.error.includes('Cannot complete task while active prerequisite dependencies remain uncompleted'));
+      assert.ok(Array.isArray(res.body.data.activeDependencies));
+      assert.equal(res.body.data.activeDependencies[0].id, 'tp-1');
+
+      // Verify tp-2 is still incomplete
+      const check = await request(app).get('/api/todos/tp-2');
+      assert.equal(check.body.data.completed, false);
+    });
+
+    it('should allow completion once all prerequisite dependencies are completed', async () => {
+      // Complete tp-1 first
+      const completeDep = await request(app).put('/api/todos/tp-1').send({
+        completed: true,
+      });
+      assert.equal(completeDep.status, 200);
+      assert.equal(completeDep.body.data.completed, true);
+
+      // Now complete tp-2
+      const completeTask = await request(app).put('/api/todos/tp-2').send({
+        completed: true,
+      });
+      assert.equal(completeTask.status, 200);
+      assert.equal(completeTask.body.data.completed, true);
+    });
+
+    it('should clean up dependencyIds when the prerequisite task is deleted', async () => {
+      // Create a task that depends on tp-3
+      const createRes = await request(app).post('/api/todos').send({
+        title: 'Run analysis on workout metrics',
+        dependencyIds: ['tp-3'],
+        category: 'health',
+      });
+      const newTaskId = createRes.body.data.id;
+
+      // Delete tp-3
+      const delRes = await request(app).delete('/api/todos/tp-3');
+      assert.equal(delRes.status, 200);
+
+      // Verify new task no longer has tp-3 in dependencyIds
+      const check = await request(app).get(`/api/todos/${newTaskId}`);
+      assert.deepEqual(check.body.data.dependencyIds, []);
+    });
+  });
+
+  describe('Task Archiving & Historical Record-Keeping (/api/todos/*archive*)', () => {
+    it('should archive a completed task via POST /api/todos/:id/archive and set archivedAt timestamp', async () => {
+      // tp-3 is seeded as completed: true
+      const res = await request(app).post('/api/todos/tp-3/archive');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.id, 'tp-3');
+      assert.equal(res.body.data.archived, true);
+      assert.ok(res.body.data.archivedAt);
+
+      // Verify filtering by archived=true and archived=false
+      const archivedRes = await request(app).get('/api/todos?archived=true');
+      assert.equal(archivedRes.status, 200);
+      assert.equal(archivedRes.body.data.length, 1);
+      assert.equal(archivedRes.body.data[0].id, 'tp-3');
+
+      const unarchivedRes = await request(app).get('/api/todos?archived=false');
+      assert.equal(unarchivedRes.status, 200);
+      assert.ok(unarchivedRes.body.data.every((t: { id: string }) => t.id !== 'tp-3'));
+    });
+
+    it('should reject archiving an active (incomplete) task with 422 TASK_NOT_COMPLETED', async () => {
+      // tp-1 is incomplete
+      const res = await request(app).post('/api/todos/tp-1/archive');
+      assert.equal(res.status, 422);
+      assert.equal(res.body.success, false);
+      assert.equal(res.body.code, 'TASK_NOT_COMPLETED');
+    });
+
+    it('should return 404 when archiving or unarchiving a non-existent task', async () => {
+      const archRes = await request(app).post('/api/todos/non-existent/archive');
+      assert.equal(archRes.status, 404);
+      assert.equal(archRes.body.code, 'NOT_FOUND');
+
+      const unarchRes = await request(app).post('/api/todos/non-existent/unarchive');
+      assert.equal(unarchRes.status, 404);
+      assert.equal(unarchRes.body.code, 'NOT_FOUND');
+    });
+
+    it('should restore an archived task via POST /api/todos/:id/unarchive', async () => {
+      await request(app).post('/api/todos/tp-3/archive');
+      const unarchRes = await request(app).post('/api/todos/tp-3/unarchive');
+      assert.equal(unarchRes.status, 200);
+      assert.equal(unarchRes.body.success, true);
+      assert.equal(unarchRes.body.data.archived, false);
+      assert.equal(unarchRes.body.data.archivedAt, undefined);
+    });
+
+    it('should archive all completed tasks at once via POST /api/todos/archive-completed', async () => {
+      // Complete tp-1 as well so both tp-1 and tp-3 are completed
+      await request(app).put('/api/todos/tp-1').send({ completed: true });
+
+      const res = await request(app).post('/api/todos/archive-completed');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.success, true);
+      assert.equal(res.body.data.archivedCount, 2);
+      assert.ok(res.body.data.archivedIds.includes('tp-1'));
+      assert.ok(res.body.data.archivedIds.includes('tp-3'));
+
+      // Active task tp-2 should remain unarchived
+      const tp2 = await request(app).get('/api/todos/tp-2');
+      assert.equal(Boolean(tp2.body.data.archived), false);
+    });
+
+    it('should support bulk archive and bulk unarchive actions via POST /api/todos/bulk', async () => {
+      // Bulk archive tp-3 (completed) and tp-1 (incomplete - should be skipped)
+      const archBulk = await request(app).post('/api/todos/bulk').send({
+        action: 'archive',
+        ids: ['tp-3', 'tp-1'],
+      });
+      assert.equal(archBulk.status, 200);
+      assert.equal(archBulk.body.data.affectedCount, 1);
+
+      const checkArchived = await request(app).get('/api/todos/tp-3');
+      assert.equal(checkArchived.body.data.archived, true);
+
+      // Bulk unarchive tp-3
+      const unarchBulk = await request(app).post('/api/todos/bulk').send({
+        action: 'unarchive',
+        ids: ['tp-3'],
+      });
+      assert.equal(unarchBulk.status, 200);
+      assert.equal(unarchBulk.body.data.affectedCount, 1);
+
+      const checkRestored = await request(app).get('/api/todos/tp-3');
+      assert.equal(checkRestored.body.data.archived, false);
+    });
+
+    it('should automatically unarchive a task when updated to completed: false via PUT /api/todos/:id', async () => {
+      await request(app).post('/api/todos/tp-3/archive');
+      const putRes = await request(app).put('/api/todos/tp-3').send({ completed: false });
+      assert.equal(putRes.status, 200);
+      assert.equal(putRes.body.data.completed, false);
+      assert.equal(putRes.body.data.archived, false);
+      assert.equal(putRes.body.data.archivedAt, undefined);
     });
   });
 });

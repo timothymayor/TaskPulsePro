@@ -17,6 +17,7 @@ export const KeyboardShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, 
     { key: '2', description: 'Switch to Today view' },
     { key: '3', description: 'Switch to Upcoming view' },
     { key: '4', description: 'Switch to Completed view' },
+    { key: '5', description: 'Switch to Archive view' },
     { key: '?', description: 'Show this keyboard shortcuts guide' },
   ];
 

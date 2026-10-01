@@ -104,6 +104,28 @@ export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
     }
   }
 
+  let safeOrder: number | undefined = undefined;
+  if (typeof obj.order === 'number' && Number.isFinite(obj.order)) {
+    safeOrder = Math.max(1, Math.round(obj.order));
+  }
+
+  const safeDependencyIds: string[] = [];
+  if (Array.isArray(obj.dependencyIds)) {
+    for (const dep of obj.dependencyIds.slice(0, 20)) {
+      if (typeof dep === 'string') {
+        const cleanDep = dep.trim();
+        if (/^[a-zA-Z0-9_-]{1,64}$/.test(cleanDep) && cleanDep !== rawId && !safeDependencyIds.includes(cleanDep)) {
+          safeDependencyIds.push(cleanDep);
+        }
+      }
+    }
+  }
+
+  const safeArchived = Boolean(obj.archived);
+  const safeArchivedAt = safeArchived
+    ? (obj.archivedAt && typeof obj.archivedAt === 'string' && !isNaN(Date.parse(obj.archivedAt)) ? obj.archivedAt : now)
+    : undefined;
+
   return {
     id: rawId,
     title: safeTitle,
@@ -118,5 +140,9 @@ export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
     subtasks: safeSubtasks,
     estimatedMinutes: safeMinutes,
     tags: safeTags,
+    order: safeOrder,
+    dependencyIds: safeDependencyIds,
+    archived: safeArchived,
+    archivedAt: safeArchivedAt,
   };
 }

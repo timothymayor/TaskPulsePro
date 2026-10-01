@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, SearchX, Plus, RefreshCw } from 'lucide-react';
+import { CheckCircle, SearchX, Plus, Archive } from 'lucide-react';
 import { FilterView } from '../types/todo';
 
 interface EmptyStateProps {
@@ -36,6 +36,28 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           className="mt-4 rounded-lg border border-neutral-300 px-3.5 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
         >
           Clear search query
+        </button>
+      </div>
+    );
+  }
+
+  if (currentView === 'archived') {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 py-16 px-4 text-center dark:border-neutral-800">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">
+          <Archive className="h-6 w-6" />
+        </div>
+        <h3 className="mt-3 text-sm font-semibold text-neutral-900 dark:text-white">
+          Your archive is empty
+        </h3>
+        <p className="mt-1 text-xs text-neutral-500 max-w-sm">
+          Move completed tasks to the Archive to keep your active workspace uncluttered while preserving your historical completion records.
+        </p>
+        <button
+          onClick={onResetFilters}
+          className="mt-4 rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200 transition-colors"
+        >
+          Return to active queue
         </button>
       </div>
     );

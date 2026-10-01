@@ -1,10 +1,12 @@
 import React from 'react';
-import { CheckCircle2, Clock, AlertTriangle, Flame } from 'lucide-react';
+import { CheckCircle2, Clock, AlertTriangle, Flame, Archive } from 'lucide-react';
 
 interface StatsProps {
   stats: {
     total: number;
     completed: number;
+    archived?: number;
+    completedUnarchived?: number;
     active: number;
     dueToday: number;
     urgent: number;
@@ -15,6 +17,7 @@ interface StatsProps {
   onFilterUrgent: () => void;
   onFilterToday: () => void;
   onFilterCompleted: () => void;
+  onFilterArchived?: () => void;
 }
 
 export const TaskStatsBar: React.FC<StatsProps> = ({
@@ -22,6 +25,7 @@ export const TaskStatsBar: React.FC<StatsProps> = ({
   onFilterUrgent,
   onFilterToday,
   onFilterCompleted,
+  onFilterArchived,
 }) => {
   const hours = Math.floor(stats.remainingMinutes / 60);
   const mins = stats.remainingMinutes % 60;
@@ -106,10 +110,25 @@ export const TaskStatsBar: React.FC<StatsProps> = ({
           {/* Completed Button */}
           <button
             onClick={onFilterCompleted}
-            className="hidden sm:inline-block text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200"
+            className="hidden sm:inline-block text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200 transition-colors"
           >
             Finished: <span className="font-mono tabular-nums">{stats.completed}</span>
           </button>
+
+          {/* Archived Counter */}
+          {onFilterArchived && (
+            <button
+              onClick={onFilterArchived}
+              className="flex items-center gap-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors"
+              title="View archived tasks"
+            >
+              <Archive className="h-3.5 w-3.5 text-neutral-400" />
+              <span>Archived:</span>
+              <span className="font-mono tabular-nums font-semibold text-neutral-900 dark:text-neutral-100">
+                {stats.archived ?? 0}
+              </span>
+            </button>
+          )}
         </div>
       </div>
     </div>
