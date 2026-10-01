@@ -1,5 +1,7 @@
 import crypto from 'crypto';
-import { TodoItem, Priority, Category } from '../types';
+import { TodoItem, Priority, Category, TagColor } from '../types';
+
+const VALID_TAG_COLORS: TagColor[] = ['emerald', 'sky', 'violet', 'amber', 'rose', 'indigo', 'teal', 'fuchsia'];
 
 export function sanitizeString(input: unknown, maxLength: number = 500): string {
   if (typeof input !== 'string') {
@@ -104,6 +106,22 @@ export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
     }
   }
 
+  let safeTagColors: Record<string, TagColor> | undefined = undefined;
+  if (obj.tagColors && typeof obj.tagColors === 'object' && !Array.isArray(obj.tagColors)) {
+    const rawColors = obj.tagColors as Record<string, unknown>;
+    const cleanedMap: Record<string, TagColor> = {};
+    for (const [k, v] of Object.entries(rawColors)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      const cleanKey = sanitizeString(k, 30).toLowerCase();
+      if (cleanKey && typeof v === 'string' && VALID_TAG_COLORS.includes(v as TagColor)) {
+        cleanedMap[cleanKey] = v as TagColor;
+      }
+    }
+    if (Object.keys(cleanedMap).length > 0) {
+      safeTagColors = cleanedMap;
+    }
+  }
+
   let safeOrder: number | undefined = undefined;
   if (typeof obj.order === 'number' && Number.isFinite(obj.order)) {
     safeOrder = Math.max(1, Math.round(obj.order));
@@ -121,7 +139,7 @@ export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
     }
   }
 
-  const safeArchived = Boolean(obj.archived);
+  const safeArchived = safeCompleted ? Boolean(obj.archived) : false;
   const safeArchivedAt = safeArchived
     ? (obj.archivedAt && typeof obj.archivedAt === 'string' && !isNaN(Date.parse(obj.archivedAt)) ? obj.archivedAt : now)
     : undefined;
@@ -140,6 +158,7 @@ export function validateAndSanitizeTodo(raw: unknown): TodoItem | null {
     subtasks: safeSubtasks,
     estimatedMinutes: safeMinutes,
     tags: safeTags,
+    tagColors: safeTagColors,
     order: safeOrder,
     dependencyIds: safeDependencyIds,
     archived: safeArchived,

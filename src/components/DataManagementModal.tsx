@@ -21,6 +21,7 @@ export const DataManagementModal: React.FC<DataModalProps> = ({
 }) => {
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [lastChecksum, setLastChecksum] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -62,10 +63,9 @@ export const DataManagementModal: React.FC<DataModalProps> = ({
   };
 
   const handleResetClick = () => {
-    if (window.confirm('Reset all tasks to sample initial state? Current data will be replaced.')) {
-      onReset();
-      setImportStatus({ success: true, message: 'Tasks restored to default demo state.' });
-    }
+    onReset();
+    setConfirmingReset(false);
+    setImportStatus({ success: true, message: 'Tasks restored to default demo state.' });
   };
 
   return (
@@ -179,13 +179,30 @@ export const DataManagementModal: React.FC<DataModalProps> = ({
                   Restores default professional task workflow templates.
                 </p>
               </div>
-              <button
-                onClick={handleResetClick}
-                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>Reset</span>
-              </button>
+              {confirmingReset ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleResetClick}
+                    className="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 transition-colors"
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    onClick={() => setConfirmingReset(false)}
+                    className="rounded-lg border border-neutral-300 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmingReset(true)}
+                  className="flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800 transition-colors"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>Reset</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, Plus, Trash2, Shield, Calendar, Clock, Tag, GripVertical, ChevronUp, ChevronDown, ListOrdered, Link2 } from 'lucide-react';
-import { TodoItem, Priority, Category } from '../types/todo';
+import { TodoItem, Priority, Category, TagColor } from '../types/todo';
 import { sanitizeString } from '../utils/security';
+import { TAG_COLOR_OPTIONS, TAG_COLOR_STYLES, getTagStyle, resolveTagColor } from '../utils/tags';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface TaskModalProps {
     estimatedMinutes?: number;
     subtasks?: string[];
     tags?: string[];
+    tagColors?: Record<string, TagColor>;
     order?: number;
     dependencyIds?: string[];
   }) => void;
@@ -40,6 +42,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   const [subtasks, setSubtasks] = useState<string[]>([]);
   const [subtaskInput, setSubtaskInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+  const [tagColors, setTagColors] = useState<Record<string, TagColor>>({});
+  const [selectedTagColor, setSelectedTagColor] = useState<TagColor | 'auto'>('auto');
   const [tagInput, setTagInput] = useState('');
   const [order, setOrder] = useState<number>(1);
   const [dependencyIds, setDependencyIds] = useState<string[]>([]);
@@ -83,6 +87,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setEstimatedMinutes(initialTodo.estimatedMinutes || '');
       setSubtasks(initialTodo.subtasks ? initialTodo.subtasks.map(s => s.title) : []);
       setTags(initialTodo.tags ? [...initialTodo.tags] : []);
+      setTagColors(initialTodo.tagColors ? { ...initialTodo.tagColors } : {});
+      setSelectedTagColor('auto');
       setTagInput('');
       setOrder(initialTodo.order || 1);
       setDependencyIds(initialTodo.dependencyIds || []);
@@ -97,6 +103,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       setEstimatedMinutes(30);
       setSubtasks([]);
       setTags([]);
+      setTagColors({});
+      setSelectedTagColor('auto');
       setTagInput('');
       setOrder(1); // Default to top of queue (#1)
       setDependencyIds([]);
@@ -128,13 +136,20 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     });
   };
 
+  const normalizeTagToken = (rawToken: string): string => {
+    return sanitizeString(rawToken.trim(), 30)
+      .toLowerCase()
+      .replace(/^#+/, '')
+      .trim();
+  };
+
   const handleAddTag = (tagToAdd?: string) => {
     const raw = tagToAdd !== undefined ? tagToAdd : tagInput;
     if (!raw.trim()) return;
 
     const tokens = raw
       .split(',')
-      .map(t => sanitizeString(t.trim(), 30).toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+      .map(normalizeTagToken)
       .filter(Boolean);
 
     if (tokens.length === 0) return;
@@ -148,7 +163,30 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       }
       return Array.from(nextSet);
     });
+
+    setTagColors(prev => {
+      const nextColors = { ...prev };
+      for (const token of tokens) {
+        if (selectedTagColor !== 'auto') {
+          nextColors[token] = selectedTagColor;
+        } else if (!nextColors[token]) {
+          nextColors[token] = resolveTagColor(token, prev);
+        }
+      }
+      return nextColors;
+    });
+
     setTagInput('');
+  };
+
+  const handleCycleTagColor = (tag: string) => {
+    const current = resolveTagColor(tag, tagColors);
+    const currentIdx = TAG_COLOR_OPTIONS.indexOf(current);
+    const nextColor = TAG_COLOR_OPTIONS[(currentIdx + 1) % TAG_COLOR_OPTIONS.length];
+    setTagColors(prev => ({
+      ...prev,
+      [tag]: nextColor,
+    }));
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
@@ -173,10 +211,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     // Collect any remaining text in tagInput before submitting
     const pendingTokens = tagInput
       .split(',')
-      .map(t => sanitizeString(t.trim(), 30).toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+      .map(normalizeTagToken)
       .filter(Boolean);
 
     const mergedTags = Array.from(new Set([...tags, ...pendingTokens])).slice(0, 10);
+    const mergedTagColors: Record<string, TagColor> = {};
+    for (const t of mergedTags) {
+      mergedTagColors[t] =
+        tagColors[t] ||
+        (selectedTagColor !== 'auto' && pendingTokens.includes(t)
+          ? selectedTagColor
+          : resolveTagColor(t, tagColors));
+    }
 
     onSubmit({
       title: cleanTitle,
@@ -187,6 +233,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
       estimatedMinutes: typeof estimatedMinutes === 'number' && estimatedMinutes > 0 ? estimatedMinutes : undefined,
       subtasks,
       tags: mergedTags,
+      tagColors: Object.keys(mergedTagColors).length > 0 ? mergedTagColors : undefined,
       order: typeof order === 'number' && order > 0 ? order : 1,
       dependencyIds,
     });
@@ -599,9 +646,9 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               Add custom tags for quick filtering and classification. Press Enter or comma to add.
             </p>
 
-            {/* Tag Input Field & Add Button */}
-            <div className="mt-2 flex gap-2">
-              <div className="relative flex-1">
+            {/* Tag Input Field, Color Selector & Add Button */}
+            <div className="mt-2 flex flex-wrap sm:flex-nowrap gap-2">
+              <div className="relative flex-1 min-w-[180px]">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400 font-mono text-xs select-none">
                   #
                 </span>
@@ -612,10 +659,43 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                   onChange={e => setTagInput(e.target.value.slice(0, 30))}
                   onKeyDown={handleTagKeyDown}
                   disabled={tags.length >= 10}
-                  placeholder={tags.length >= 10 ? 'Maximum 10 tags reached' : 'Type tag name (e.g. devops, audit)...'}
+                  placeholder={tags.length >= 10 ? 'Maximum 10 tags reached' : 'Type custom tag (e.g. q4 release, devops)...'}
                   className="w-full rounded-lg border border-neutral-300 bg-white pl-6 pr-3 py-1.5 text-xs text-neutral-900 placeholder-neutral-400 focus:border-neutral-900 focus:outline-hidden disabled:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:bg-neutral-800 dark:text-white dark:focus:border-neutral-100 dark:disabled:bg-neutral-900"
                 />
               </div>
+
+              {/* Pill Color Accent Selector */}
+              <div className="flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 dark:border-neutral-700 dark:bg-neutral-800" title="Select tag pill color">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTagColor('auto')}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                    selectedTagColor === 'auto'
+                      ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900'
+                      : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                  title="Auto-assign tag color"
+                >
+                  Auto
+                </button>
+                {TAG_COLOR_OPTIONS.slice(0, 6).map(colorKey => {
+                  const style = TAG_COLOR_STYLES[colorKey];
+                  const isChosen = selectedTagColor === colorKey;
+                  return (
+                    <button
+                      key={colorKey}
+                      type="button"
+                      onClick={() => setSelectedTagColor(colorKey)}
+                      className={`h-3.5 w-3.5 rounded-full transition-transform ${style.dotClass} ${
+                        isChosen ? 'ring-2 ring-offset-1 ring-neutral-900 dark:ring-neutral-100 scale-110' : 'opacity-70 hover:opacity-100'
+                      }`}
+                      title={`Tag color: ${style.label}`}
+                      aria-label={`Select ${style.label} tag color`}
+                    />
+                  );
+                })}
+              </div>
+
               <button
                 type="button"
                 onClick={() => handleAddTag()}
@@ -627,44 +707,58 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </button>
             </div>
 
-            {/* Added Custom Tags List (Zero-Pill Discipline: clean unboxed hairline badge with remove button) */}
+            {/* Added Custom Tags List rendered as small colored pills */}
             {tags.length > 0 && (
               <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-neutral-200/60 pt-2.5 dark:border-neutral-800">
-                {tags.map(tag => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-2 py-0.5 text-xs font-mono text-neutral-800 shadow-2xs dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
-                  >
-                    <span>#{tag}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTag(tag)}
-                      className="ml-0.5 rounded p-0.5 text-neutral-400 hover:text-rose-500 hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors"
-                      title={`Remove tag ${tag}`}
-                      aria-label={`Remove tag ${tag}`}
+                {tags.map(tag => {
+                  const tagStyle = getTagStyle(tag, tagColors);
+                  return (
+                    <span
+                      key={tag}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${tagStyle.pillClass}`}
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => handleCycleTagColor(tag)}
+                        className={`h-2 w-2 rounded-full shrink-0 cursor-pointer transition-transform hover:scale-125 ${tagStyle.dotClass}`}
+                        title="Click to cycle pill color"
+                        aria-label={`Change color for tag ${tag}`}
+                      />
+                      <span className="font-mono text-[11px]">#{tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTag(tag)}
+                        className="ml-0.5 rounded-full p-0.5 opacity-70 hover:opacity-100 hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                        title={`Remove tag ${tag}`}
+                        aria-label={`Remove tag ${tag}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  );
+                })}
               </div>
             )}
 
             {/* Quick Suggestions from existing tasks */}
             {tags.length < 10 && availableTagSuggestions.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs text-neutral-500 dark:text-neutral-400">
                 <span className="text-[11px]">Quick add:</span>
-                {availableTagSuggestions.map(suggestion => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => handleAddTag(suggestion)}
-                    className="font-mono text-[11px] text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white underline decoration-dotted transition-colors"
-                    title={`Add tag #${suggestion}`}
-                  >
-                    +{suggestion}
-                  </button>
-                ))}
+                {availableTagSuggestions.map(suggestion => {
+                  const sStyle = getTagStyle(suggestion, tagColors);
+                  return (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => handleAddTag(suggestion)}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] transition-all cursor-pointer ${sStyle.pillClass}`}
+                      title={`Add tag #${suggestion}`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${sStyle.dotClass}`} />
+                      <span>+{suggestion}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

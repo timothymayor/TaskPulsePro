@@ -16,7 +16,7 @@ function sendResponse<T>(res: Response, status: number, payload: { success: bool
 // 1. GET /api/todos
 router.get('/', (req: Request, res: Response) => {
   let list = todoStore.getAll();
-  const { category, priority, completed, archived, search } = req.query;
+  const { category, priority, completed, archived, tag, search } = req.query;
 
   if (typeof category === 'string' && category !== 'all') {
     list = list.filter(t => t.category === category);
@@ -34,6 +34,11 @@ router.get('/', (req: Request, res: Response) => {
   if (typeof archived === 'string') {
     const isArchived = archived === 'true';
     list = list.filter(t => Boolean(t.archived) === isArchived);
+  }
+
+  if (typeof tag === 'string' && tag.trim() && tag !== 'all') {
+    const targetTag = tag.toLowerCase().trim();
+    list = list.filter(t => t.tags.includes(targetTag));
   }
 
   if (typeof search === 'string' && search.trim()) {

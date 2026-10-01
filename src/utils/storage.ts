@@ -3,6 +3,8 @@ import { validateTodoItem, computeChecksum, sanitizeString } from './security';
 
 const STORAGE_KEY = 'taskpulse_todos_v2';
 const THEME_KEY = 'taskpulse_theme_v2';
+const DAILY_GOAL_KEY = 'taskpulse_daily_goal_v2';
+const DEFAULT_DAILY_GOAL = 3;
 
 export const INITIAL_TODOS: TodoItem[] = [
   {
@@ -153,6 +155,30 @@ export function saveThemePreference(theme: 'light' | 'dark'): void {
   } catch (error) {
     console.warn('Unable to persist theme:', error);
   }
+}
+
+export function loadDailyGoal(): number {
+  try {
+    const raw = localStorage.getItem(DAILY_GOAL_KEY);
+    if (!raw) return DEFAULT_DAILY_GOAL;
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 50) {
+      return parsed;
+    }
+    return DEFAULT_DAILY_GOAL;
+  } catch {
+    return DEFAULT_DAILY_GOAL;
+  }
+}
+
+export function saveDailyGoal(goal: number): number {
+  const safeGoal = Number.isFinite(goal) ? Math.max(1, Math.min(50, Math.round(goal))) : DEFAULT_DAILY_GOAL;
+  try {
+    localStorage.setItem(DAILY_GOAL_KEY, String(safeGoal));
+  } catch (error) {
+    console.warn('Unable to persist daily goal:', error);
+  }
+  return safeGoal;
 }
 
 export function exportBackupData(todos: TodoItem[]): string {

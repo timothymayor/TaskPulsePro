@@ -24,6 +24,8 @@ export default function App() {
     todos,
     filteredTodos,
     stats,
+    dailyGoal,
+    setDailyGoal,
     filterView,
     setFilterView,
     categoryFilter,
@@ -174,6 +176,7 @@ export default function App() {
     estimatedMinutes?: number;
     subtasks?: string[];
     tags?: string[];
+    tagColors?: TodoItem['tagColors'];
     order?: number;
     dependencyIds?: string[];
   }) => {
@@ -186,6 +189,7 @@ export default function App() {
         dueDate: data.dueDate,
         estimatedMinutes: data.estimatedMinutes,
         tags: data.tags,
+        tagColors: data.tagColors,
         order: data.order,
         dependencyIds: data.dependencyIds,
       });
@@ -246,6 +250,8 @@ export default function App() {
       {/* 2. Compact Tabular Stats & Progress Ribbon */}
       <TaskStatsBar
         stats={stats}
+        dailyGoal={dailyGoal}
+        onUpdateDailyGoal={setDailyGoal}
         onFilterUrgent={() => setFilterView('urgent')}
         onFilterToday={() => setFilterView('today')}
         onFilterCompleted={() => setFilterView('completed')}

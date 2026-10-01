@@ -2,6 +2,8 @@ export type Priority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type Category = 'work' | 'personal' | 'finance' | 'health' | 'learning' | 'errands';
 
+export type TagColor = 'emerald' | 'sky' | 'violet' | 'amber' | 'rose' | 'indigo' | 'teal' | 'fuchsia';
+
 export interface Subtask {
   id: string;
   title: string;
@@ -22,6 +24,7 @@ export interface TodoItem {
   subtasks: Subtask[];
   estimatedMinutes?: number;
   tags: string[];
+  tagColors?: Record<string, TagColor>;
   order?: number;
   dependencyIds?: string[];
   archived?: boolean;

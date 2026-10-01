@@ -18,6 +18,7 @@ import {
   ArchiveRestore,
 } from 'lucide-react';
 import { TodoItem, Priority } from '../types/todo';
+import { getTagStyle } from '../utils/tags';
 
 interface TaskCardProps {
   todo: TodoItem;
@@ -383,28 +384,32 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               </>
             )}
 
-            {/* Tags if any */}
+            {/* Tags if any — rendered as small colored pills */}
             {todo.tags.length > 0 && (
               <>
                 <span aria-hidden="true" className="text-neutral-300 dark:text-neutral-700">·</span>
                 <span className="inline-flex items-center gap-1.5 flex-wrap">
-                  {todo.tags.map(t => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onFilterByTag) {
-                          onFilterByTag(t);
-                        }
-                      }}
-                      className="font-mono text-xs text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white transition-colors cursor-pointer hover:underline decoration-dotted underline-offset-2"
-                      title={`Filter by tag #${t}`}
-                      aria-label={`Filter by tag #${t}`}
-                    >
-                      #{t}
-                    </button>
-                  ))}
+                  {todo.tags.map(t => {
+                    const tagStyle = getTagStyle(t, todo.tagColors);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onFilterByTag) {
+                            onFilterByTag(t);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] font-medium transition-all cursor-pointer active:scale-95 ${tagStyle.pillClass}`}
+                        title={`Filter by tag #${t}`}
+                        aria-label={`Filter by tag #${t}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${tagStyle.dotClass}`} />
+                        <span>#{t}</span>
+                      </button>
+                    );
+                  })}
                 </span>
               </>
             )}

@@ -1,11 +1,26 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import confetti from 'canvas-confetti';
-import { TodoItem, Priority, Category, FilterView, SortOption, Subtask } from '../types/todo';
-import { loadTodosFromStorage, saveTodosToStorage, INITIAL_TODOS, exportBackupData, parseAndValidateBackup } from '../utils/storage';
+import { TodoItem, Priority, Category, TagColor, FilterView, SortOption, Subtask } from '../types/todo';
+import { loadTodosFromStorage, saveTodosToStorage, INITIAL_TODOS, exportBackupData, parseAndValidateBackup, loadDailyGoal, saveDailyGoal } from '../utils/storage';
 import { sanitizeString, validateTodoItem } from '../utils/security';
+
+function isTaskCompletedToday(t: TodoItem, todayStr: string): boolean {
+  if (!t.completed) return false;
+  if (t.completedAt) {
+    if (t.completedAt.split('T')[0] === todayStr) return true;
+    try {
+      if (new Date(t.completedAt).toDateString() === new Date().toDateString()) return true;
+    } catch {
+      // ignore invalid date
+    }
+    return false;
+  }
+  return t.dueDate === todayStr;
+}
 
 export function useTodos() {
   const [todos, setTodos] = useState<TodoItem[]>(() => loadTodosFromStorage());
+  const [dailyGoal, setDailyGoalState] = useState<number>(() => loadDailyGoal());
   const [filterView, setFilterView] = useState<FilterView>('all');
   const [categoryFilter, setCategoryFilter] = useState<Category | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,6 +47,12 @@ export function useTodos() {
     });
   }, [todos]);
 
+  // Update daily goal target (1 - 50 tasks)
+  const setDailyGoal = useCallback((goal: number) => {
+    const safe = saveDailyGoal(goal);
+    setDailyGoalState(safe);
+  }, []);
+
   // Trigger celebration confetti
   const triggerCelebration = useCallback(() => {
     try {
@@ -56,6 +77,7 @@ export function useTodos() {
     estimatedMinutes?: number;
     subtasks?: string[];
     tags?: string[];
+    tagColors?: Record<string, TagColor>;
     order?: number;
     dependencyIds?: string[];
   }): TodoItem | null => {
@@ -80,6 +102,7 @@ export function useTodos() {
       })).filter(st => st.title.length > 0),
       estimatedMinutes: data.estimatedMinutes,
       tags: (data.tags || []).map(t => sanitizeString(t, 30).toLowerCase()).filter(Boolean),
+      tagColors: data.tagColors,
       order: data.order,
       dependencyIds: Array.isArray(data.dependencyIds) ? data.dependencyIds.filter(Boolean) : [],
     };
@@ -283,7 +306,10 @@ export function useTodos() {
 
       if (willBeCompleted) {
         const remainingActive = next.filter(t => !t.completed && !t.archived).length;
-        if (remainingActive === 0) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const prevDoneToday = prev.filter(item => isTaskCompletedToday(item, todayStr)).length;
+        const nextDoneToday = next.filter(item => isTaskCompletedToday(item, todayStr)).length;
+        if (remainingActive === 0 || (prevDoneToday < dailyGoal && nextDoneToday >= dailyGoal)) {
           triggerCelebration();
         }
       }
@@ -730,6 +756,9 @@ export function useTodos() {
     const completedUnarchived = todos.filter(t => t.completed && !t.archived).length;
     const active = todos.filter(t => !t.completed && !t.archived).length;
     const todayStr = new Date().toISOString().split('T')[0];
+    const completedToday = todos.filter(t => isTaskCompletedToday(t, todayStr)).length;
+    const dailyGoalProgress = dailyGoal > 0 ? Math.min(100, Math.round((completedToday / dailyGoal) * 100)) : 0;
+    const dailyGoalMet = dailyGoal > 0 && completedToday >= dailyGoal;
     const dueToday = todos.filter(t => !t.completed && !t.archived && t.dueDate === todayStr).length;
     const urgent = todos.filter(t => !t.completed && !t.archived && t.priority === 'urgent').length;
     const overdue = todos.filter(t => !t.completed && !t.archived && t.dueDate && t.dueDate < todayStr).length;
@@ -743,6 +772,10 @@ export function useTodos() {
     return {
       total,
       completed,
+      completedToday,
+      dailyGoal,
+      dailyGoalProgress,
+      dailyGoalMet,
       archived,
       completedUnarchived,
       active,
@@ -752,12 +785,14 @@ export function useTodos() {
       completionRate,
       remainingMinutes,
     };
-  }, [todos]);
+  }, [todos, dailyGoal]);
 
   return {
     todos,
     filteredTodos,
     stats,
+    dailyGoal,
+    setDailyGoal,
     filterView,
     setFilterView,
     categoryFilter,

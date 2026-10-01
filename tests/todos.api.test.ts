@@ -32,6 +32,13 @@ describe('Todos API Endpoints (/api/todos)', () => {
       assert.ok(res.body.data.every((t: { priority: string }) => t.priority === 'urgent'));
     });
 
+    it('should filter todos by custom tag via ?tag= query parameter', async () => {
+      const res = await request(app).get('/api/todos?tag=devops');
+      assert.equal(res.status, 200);
+      assert.ok(res.body.data.length >= 1);
+      assert.ok(res.body.data.every((t: { tags: string[] }) => t.tags.includes('devops')));
+    });
+
     it('should search todos matching query', async () => {
       const res = await request(app).get('/api/todos?search=endurance');
       assert.equal(res.status, 200);
@@ -109,11 +116,20 @@ describe('Todos API Endpoints (/api/todos)', () => {
         title: 'Task with Custom Tags',
         priority: 'medium',
         tags: ['Frontend', '  DevOps  ', 'frontend', '<script>tag', 'performance'],
+        tagColors: {
+          frontend: 'sky',
+          devops: 'indigo',
+          invalidColorTag: 'not-a-valid-color',
+        },
       };
       const res = await request(app).post('/api/todos').send(payload);
       assert.equal(res.status, 201);
       assert.ok(Array.isArray(res.body.data.tags));
       assert.deepEqual(res.body.data.tags, ['frontend', 'devops', 'tag', 'performance']);
+      assert.deepEqual(res.body.data.tagColors, {
+        frontend: 'sky',
+        devops: 'indigo',
+      });
     });
   });
 
@@ -446,6 +462,13 @@ describe('Todos API Endpoints (/api/todos)', () => {
       assert.equal(putRes.body.data.completed, false);
       assert.equal(putRes.body.data.archived, false);
       assert.equal(putRes.body.data.archivedAt, undefined);
+    });
+
+    it('should reject PUT /api/todos/:id with 422 when attempting to archive an incomplete task', async () => {
+      const putRes = await request(app).put('/api/todos/tp-1').send({ archived: true });
+      assert.equal(putRes.status, 422);
+      assert.equal(putRes.body.success, false);
+      assert.equal(putRes.body.code, 'TASK_NOT_COMPLETED');
     });
   });
 });

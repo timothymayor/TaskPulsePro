@@ -1,4 +1,6 @@
-import { TodoItem, Priority, Category, SecurityCheckResult } from '../types/todo';
+import { TodoItem, Priority, Category, TagColor, SecurityCheckResult } from '../types/todo';
+
+const VALID_TAG_COLORS: TagColor[] = ['emerald', 'sky', 'violet', 'amber', 'rose', 'indigo', 'teal', 'fuchsia'];
 
 /**
  * Strips dangerous HTML tags and script-execution vectors while preserving safe text characters.
@@ -147,6 +149,23 @@ export function validateTodoItem(raw: unknown): TodoItem | null {
     }
   }
 
+  // Tag Colors
+  let safeTagColors: Record<string, TagColor> | undefined = undefined;
+  if (obj.tagColors && typeof obj.tagColors === 'object' && !Array.isArray(obj.tagColors)) {
+    const rawColors = obj.tagColors as Record<string, unknown>;
+    const cleanedMap: Record<string, TagColor> = {};
+    for (const [k, v] of Object.entries(rawColors)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      const cleanKey = sanitizeString(k, 30).toLowerCase();
+      if (cleanKey && typeof v === 'string' && VALID_TAG_COLORS.includes(v as TagColor)) {
+        cleanedMap[cleanKey] = v as TagColor;
+      }
+    }
+    if (Object.keys(cleanedMap).length > 0) {
+      safeTagColors = cleanedMap;
+    }
+  }
+
   // Numerical order / priority rank
   let safeOrder: number | undefined = undefined;
   if (typeof obj.order === 'number' && Number.isFinite(obj.order)) {
@@ -186,6 +205,7 @@ export function validateTodoItem(raw: unknown): TodoItem | null {
     subtasks: safeSubtasks,
     estimatedMinutes: safeMinutes,
     tags: safeTags,
+    tagColors: safeTagColors,
     order: safeOrder,
     dependencyIds: safeDependencyIds,
     archived: safeArchived,
